@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>העברה בטיפול פסיכולוגי | טרנספרנס בטיפול פסיכולוגי | טיפול נפשי למבוגרים</title>
+    <meta name="description" content="">
+    <meta name="keywords" content="">
+    
+    <!-- Zappy Analytics -->
+<script>
+(function() {
+  'use strict';
+  
+  // Configuration
+  var config = {
+    websiteId: 'c3d95fbd-11fb-41dd-a82a-cb2e9541a260',
+    apiUrl: 'http://localhost:5001/api/analytics/track',
+    sessionDuration: 30 * 60 * 1000, // 30 minutes
+    visitorDuration: 30 * 24 * 60 * 60 * 1000, // 30 days
+    trackPageViews: true,
+    trackClicks: true,
+    trackFormSubmissions: true
+  };
+  
+  // Generate or retrieve persistent visitor ID (30 days)
+  function getVisitorId() {
+    var visitorKey = 'zappy_visitor_' + config.websiteId;
+    var visitor = null;
+    
+    try {
+      visitor = localStorage.getItem(visitorKey);
+      if (visitor) {
+        var visitorData = JSON.parse(visitor);
+        var now = Date.now();
+        
+        // Check if visitor ID is still valid (30 days)
+        if (now - visitorData.created < config.visitorDuration) {
+          // Update last seen timestamp
+          visitorData.lastSeen = now;
+          localStorage.setItem(visitorKey, JSON.stringify(visitorData));
+          return visitorData.id;
+        }
+      }
+    } catch (e) {
+      console.warn('Zappy Analytics: LocalStorage not available');
+    }
+    
+    // Generate new visitor ID
+    var newVisitorId = 'zv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    try {
+      localStorage.setItem(visitorKey, JSON.stringify({
+        id: newVisitorId,
+        created: Date.now(),
+        lastSeen: Date.now()
+      }));
+    } catch (e) {
+      // Continue without local storage
+    }
+    
+    return newVisitorId;
+  }
+  
+  // Generate or retrieve session ID (30 minutes)
+  function getSessionId() {
+    var sessionKey = 'zappy_session_' + config.websiteId;
+    var session = null;
+    
+    try {
+      session = sessionStorage.getItem(sessionKey);
+      if (session) {
+        var sessionData = JSON.parse(session);
+        var now = Date.now();
+        
+        // Check if session is still valid
+        if (now - sessionData.timestamp < config.sessionDuration) {
+          // Update timestamp
+          sessionData.timestamp = now;
+          sessionStorage.setItem(sessionKey, JSON.stringify(sessionData));
+          return sessionData.id;
+        }
+      }
+    } catch (e) {
+      console.warn('Zappy Analytics: SessionStorage not available');
+    }
+    
+    // Generate new session ID
+    var newSessionId = 'zs_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    try {
+      sessionStorage.setItem(sessionKey, JSON.stringify({
+        id: newSessionId,
+        timestamp: Date.now()
+      }));
+    } catch (e) {
+      // Continue without session storage
+    }
+    
+    return newSessionId;
+  }
+  
+  var visitorId = getVisitorId();
+  var sessionId = getSessionId();
+  
+  // Track an event
+  function trackEvent(eventType, data) {
+    data = data || {};
+    
+    var eventData = {
+      website_id: config.websiteId,
+      event_type: eventType,
+      page_path: window.location.pathname,
+      referrer: document.referrer || 'direct',
+      visitor_id: visitorId,
+      session_id: sessionId,
+      metadata: data
+    };
+    
+    // Use sendBeacon if available (better for page unload events)
+    if (navigator.sendBeacon) {
+      var blob = new Blob([JSON.stringify(eventData)], { type: 'application/json' });
+      navigator.sendBeacon(config.apiUrl, blob);
+    } else {
+      // Fallback to fetch
+      fetch(config.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(eventData),
+        keepalive: true
+      }).catch(function(error) {
+        console.warn('Zappy Analytics: Failed to track event', error);
+      });
+    }
+  }
+  
+  // Track page view
+  if (config.trackPageViews) {
+    trackEvent('pageview', {
+      title: document.title,
+      url: window.location.href
+    });
+  }
+  
+  // Track clicks on important elements
+  if (config.trackClicks) {
+    document.addEventListener('click', function(e) {
+      var target = e.target;
+      
+      // Track button clicks (counted as actions)
+      if (target.tagName === 'BUTTON' || target.closest('button')) {
+        var button = target.tagName === 'BUTTON' ? target : target.closest('button');
+        trackEvent('click', {
+          element: 'button',
+          text: button.textContent.trim().substring(0, 100),
+          id: button.id || null,
+          class: button.className || null
+        });
+      }
+      
+      // Track link clicks (navigation - not counted as actions)
+      else if (target.tagName === 'A' || target.closest('a')) {
+        var link = target.tagName === 'A' ? target : target.closest('a');
+        trackEvent('navigation', {
+          element: 'link',
+          text: link.textContent.trim().substring(0, 100),
+          href: link.href,
+          external: link.hostname !== window.location.hostname
+        });
+      }
+    }, true);
+  }
+  
+  // Track form submissions
+  if (config.trackFormSubmissions) {
+    document.addEventListener('submit', function(e) {
+      var form = e.target;
+      
+      trackEvent('form_submit', {
+        form_id: form.id || null,
+        form_name: form.name || null,
+        form_action: form.action || null,
+        form_method: form.method || 'GET'
+      });
+    }, true);
+  }
+  
+  // Track time on page (send on page unload)
+  var pageLoadTime = Date.now();
+  
+  window.addEventListener('beforeunload', function() {
+    var timeOnPage = Math.floor((Date.now() - pageLoadTime) / 1000); // in seconds
+    
+    trackEvent('page_unload', {
+      time_on_page: timeOnPage,
+      page_path: window.location.pathname
+    });
+  });
+  
+  // Expose tracking function globally for custom events
+  window.zappyAnalytics = {
+    track: trackEvent,
+    getVisitorId: function() { return visitorId; },
+    getSessionId: function() { return sessionId; }
+  };
+  
+})();
+</script>
+<!-- End Zappy Analytics -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="/styles.css">
+    <style id="zappy-mobile-submenu-styles">
+      @media (max-width: 768px) {
+        .nav-menu .sub-menu, nav .sub-menu, .navbar .sub-menu, #navMenu .sub-menu { position: static !important; transform: none !important; box-shadow: none !important; background: transparent !important; max-height: 0; overflow: hidden; opacity: 0; visibility: hidden; transition: max-height 0.3s ease, opacity 0.3s ease; padding: 0 !important; }
+        .sub-menu.mobile-expanded { max-height: 500px !important; opacity: 1 !important; visibility: visible !important; padding: 8px 0 8px 16px !important; }
+        [dir="rtl"] .sub-menu.mobile-expanded, html[lang="he"] .sub-menu.mobile-expanded { padding: 8px 16px 8px 0 !important; }
+        .nav-menu li:hover > .sub-menu, nav li:hover > .sub-menu, .navbar li:hover > .sub-menu, #navMenu li:hover > .sub-menu { opacity: 0; visibility: hidden; }
+        .nav-menu li > .sub-menu.mobile-expanded, nav li > .sub-menu.mobile-expanded, .navbar li > .sub-menu.mobile-expanded, #navMenu li > .sub-menu.mobile-expanded { opacity: 1 !important; visibility: visible !important; pointer-events: auto !important; }
+        .nav-menu li:has(.sub-menu), nav li:has(.sub-menu), .navbar li:has(.sub-menu), #navMenu li:has(.sub-menu) { display: flex !important; flex-wrap: wrap !important; align-items: center !important; }
+        .nav-menu li:has(.sub-menu) > a, nav li:has(.sub-menu) > a, .navbar li:has(.sub-menu) > a, #navMenu li:has(.sub-menu) > a { flex: 1 !important; }
+        .mobile-submenu-toggle { display: flex !important; align-items: center !important; justify-content: center !important; width: 44px !important; height: 44px !important; background: transparent !important; border: none !important; cursor: pointer !important; }
+        .mobile-submenu-toggle::after { content: '' !important; display: block !important; width: 0 !important; height: 0 !important; border-left: 6px solid transparent !important; border-right: 6px solid transparent !important; border-top: 7px solid currentColor !important; transition: transform 0.3s ease !important; }
+        .mobile-submenu-toggle.expanded::after { transform: rotate(180deg) !important; }
+        .nav-menu li:has(.sub-menu) > .sub-menu, nav li:has(.sub-menu) > .sub-menu, .navbar li:has(.sub-menu) > .sub-menu, #navMenu li:has(.sub-menu) > .sub-menu { flex-basis: 100% !important; width: 100% !important; }
+        .sub-menu a { padding: 10px 0 !important; display: block !important; }
+      }
+      @media (min-width: 769px) { .mobile-submenu-toggle { display: none !important; } }
+    </style>
+</head>
+<body>
+<div dir="rtl" class="zappy-rtl-wrapper" style="direction: rtl; text-align: right;"><html><head></head><body><div id="headed"><center>
+<a href="/" title="עוזי כרמי"><div style="width:450px;height:250px;position: absolute;" id="bigme"></div></a>
+<img src="/assets/dd5296a9-5b1a-41ec-a5ea-95bb0da29c39.jpg" alt="עוזי כרמי"></center>
+</div>
+
+<div id="LogoText2" style="display:none;">לקביעת פגישת היכרות&nbsp; <span id="phoneme"> התקשרו <a href="tel:054-5757040">054-5757040</a></span></div>
+
+
+		
+	<div id="block-header">
+		<div class="block-header wrapper ">
+				
+			<header id="header" class="clearfix">
+							<div id="banner"><div class="textwidget"><div id="LogoText">לקביעת פגישת היכרות&nbsp; <span id="phoneme">
+<br>
+ התקשרו: <a href="tel:054-5757040">054-5757040</a></span></div></div></div>
+								
+				
+								<div id="menubar">
+					
+										<nav id="menu"><ul class="menu menu-dropdown"><li class="level1 item674"><a href="/" class="level1"><span>פסיכולוג קליני</span></a></li><li class="level1 item673"><a href="/background" class="level1"><span>רקע והכשרה</span></a></li><li class="level1 item685"><a href="/psychology" class="level1"><span>מה זה טיפול פסיכולוגי ?</span></a></li><li class="level1 item813"><a href="/difficulties" class="level1"><span>קשיים שונים</span></a></li><li class="level1 item698"><a href="/faq" class="level1"><span>שאלות ותשובות</span></a></li><li class="level1 item721"><a href="/articles" class="level1"><span>מאמרים</span></a></li><li class="level1 item723"><a href="/contact" class="level1"><span>צור קשר</span></a></li></ul></nav>
+					
+										
+				</div>
+				
+				
+
+
+			</header>
+
+		</div>
+
+	</div>
+		<div id="header2"><h1 class="title">מה זה טרנספרנס (העברה) וכיצד הוא מופיע בטיפול פסיכולוגי – זווית תיאורטית</h1></div>
+	
+	
+	
+					
+				
+	<div id="block-main" class="bg-white">	
+		<div class="block-main wrapper ">
+			
+			<div id="main" class="grid-block" style="display: flex !important; flex-wrap: wrap !important; gap: 30px !important;">
+
+				<div id="maininner" class="grid-box" style="min-height: 735px;; flex: 1 1 auto !important; min-width: 0 !important">
+					<section id="innertop" class="grid-block">
+					
+					
+					</section>
+					
+					
+										<section id="content" class="grid-block"><div id="system">
+
+					
+		<div id="sidebart">
+											<img width="308" height="292" src="/assets/929d9414-5471-4c01-b745-4f3a0a4630b3.jpg" class="size-auto wp-post-image" alt="" decoding="async" fetchpriority="high" srcset="/assets/929d9414-5471-4c01-b745-4f3a0a4630b3.jpg 308w, /assets/3ca83cc8-f7f8-464c-ad2d-a9252f1f70a5.jpg 120w" sizes="(max-width: 308px) 100vw, 308px">						</div>
+		
+		<article class="item" data-permalink="https://mypsy.co.il/faq/transferance/">
+		
+		
+
+
+			<div class="content clearfix"><div id="Page">
+<div id="PageTitle">מה זה טרנספרנס (העברה) וכיצד הוא מופיע בטיפול פסיכולוגי – זווית תיאורטית</div>
+<div class="PageTitleBottomLine"></div>
+<div id="PageStory">
+<p align="justify">טרנספרנס, או העברה עזה הופיעה כבר בטיפול הנחשב לראשית הפסיכואנליזה – <a title="" href="https://mypsy.co.il/articles_index/43.htm" type="" target="_blank" rel="noopener noreferrer">הטיפול הקטרטי</a> שברוייר ערך באנה או. מאז הפכה ההעברה לאבן פינה בטיפול הפסיכולוגי הפסיכודינמי.</p>
+<p align="justify">כיום, כאשר מדברים על העברה מתכוונים לרוב להעברה של רגשות, משאלות ודפוסי קשר משמעותיים מהעבר להווה. על-פי רוב הכוונה היא לדפוסי קשר שנוצרו מול ההורים בילדות, אם כי אין זה הכרחי. העברה קיימת תמיד ובכל קשר בין אישי שאנו מקיימים, אם כי בעוצמות משתנות. קשה להפריז בתאור עומק ההשפעה שיש לה על חיינו.</p>
+<p align="justify">העברה היא הגורמת לכך שאנו חוזרים שוב ושוב על אותם דפוסי קשר מזיקים בקשרים שונים. אחד מחברי התגרש מאשה דומיננטית מאוד, לאחר שחש כי הוא מתקשה למצוא מקום בקשר והתעוררו בו תחושות של העלמות. כשנה לאחר הגרושין התאהב באשה אחרת, וראה זה פלא – גם היא דומיננטית מאוד. אין זה מפליא כי אמו של אותו גבר הייתה אשה דומיננטית מאוד, ואילו אביו התקשה למצוא מקום לידה.</p>
+<p align="justify">העברה משפיעה מאוד על החוויה החברתית שלנו. אילה חשה כילדה שהוריה מעריכים את אחיותיה יותר ממנה, ורואים בה "ברווזון מכוער". בבגרותה היא חשה שוב ושוב, שאינה זוכה להערכה בכל קבוצה בה היא נמצאת.</p>
+<p align="justify">העברה עומדת בבסיס תגובותינו הרגשיות העזות, והיא הגורמת לכך שאדם אחד יגיב בעוצמה רבה לסיטואציה שאחר יגיב אליה באדישות יחסית. הלית נפגעת עד עמקי נשמתה בכל פעם שבן זוגה מאחר. היא מגיבה בסערה רגשית וזעם עזים. הילת היא ילדה נטושה וכל אחור מעורר אצלה את חווית הנטישה.</p>
+<p align="justify">גם אם נדמה לנו שאנו זוכרים את ילדותנו, כמעט תמיד אנו שוכחים חלקים קשים ממנה. דבר אינו נעלם בנפש, ומה שדומה שנשכח, נותר מאוחסן בלא-מודע. חוויות קשות, שכאילו נעלמו, חוזרות שוב ושוב דרך ההעברה. ניתן לדמות את ההעברה לתיאטרון, בו מוצג בהווה מחזה שנכתב בעבר.</p>
+<p align="justify">העברה מופיעה בכל קשר שאנו יוצרים. טיפול פסיכולוגי הוא קשר, ומטבע הדברים גם בו מופיעה העברה. יחודו של טיפול פסיכולוגי הוא שפסיכולוג קליני מיומן יודע לזהות את ההעברה ולעבוד עמה. בטיפול פסיכולוגי אנו משתמשים בהעברה כדי להכיר את העבר שהאדם לא מעז או לא יכול לזכור, ובמקום שעבר זה יחזור וישתחזר שוב ושוב בחייו, אנו מנסים לשחררו מאחיזתו.</p>
+<p align="justify">במאמר הקצר הבא אתאר כיצד טרנספרס מופיע בחדר הטיפול</p>
+</div>
+</div>
+</div>
+
+			
+			
+
+			
+			
+		</article>
+
+			
+</div></section>
+					
+										<section id="innerbottom" class="grid-block"><div class="grid-box width100 grid-h"><div class="module mod-box mod-box-color1 mod-box-colored widget_black_studio_tinymce deepest" style="min-height: 0px;">
+
+		<h3 class="module-title"><span class="icon icon-download"></span>צרו קשר</h3>	<div class="textwidget"><p>
+                </p><div class="gf_browser_chrome gform_wrapper gform_legacy_markup_wrapper gform-theme--no-framework gplaceholder_wrapper style_wrapper box_wrapper" data-form-theme="legacy" data-form-index="0" id="gform_wrapper_2"><div id="gf_2" class="gform_anchor" tabindex="-1"></div><form method="post" enctype="multipart/form-data" target="gform_ajax_frame_2" id="gform_2" class="gplaceholder  style box" action="/faq/transferance/#gf_2" data-formid="2" novalidate="">
+                        <div class="gform-body gform_body"><ul id="gform_fields_2" class="gform_fields top_label form_sublabel_below description_below validation_below"><li id="field_2_5" class="gfield gfield--type-honeypot gform_validation_container field_sublabel_below gfield--has-description field_description_below field_validation_below gfield_visibility_visible"><label class="gfield_label gform-field-label" for="input_2_5" style="display: none;">Email</label><div class="ginput_container"><input name="input_5" id="input_2_5" type="text" value="" autocomplete="new-password" placeholder="Email"></div><div class="gfield_description" id="gfield_description_2_5">שדה זה מיועד למטרות אימות ויש להשאיר אותו ללא שינוי.</div></li><li id="field_2_3" class="gfield gfield--type-text gfield_contains_required field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"><label class="gfield_label gform-field-label" for="input_2_3" style="display: none;">שם<span class="gfield_required"><span class="gfield_required gfield_required_asterisk">*</span></span></label><div class="ginput_container ginput_container_text"><input name="input_3" id="input_2_3" type="text" value="" class="large" aria-required="true" aria-invalid="false" placeholder="שם *"></div></li><li id="field_2_2" class="gfield gfield--type-text gfield_contains_required field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"><label class="gfield_label gform-field-label" for="input_2_2" style="display: none;">טלפון<span class="gfield_required"><span class="gfield_required gfield_required_asterisk">*</span></span></label><div class="ginput_container ginput_container_text"><input name="input_2" id="input_2_2" type="text" value="" class="large" aria-required="true" aria-invalid="false" placeholder="טלפון *"></div></li><li id="field_2_4" class="gfield gfield--type-textarea field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"><label class="gfield_label gform-field-label" for="input_2_4" style="display: none;">הערות</label><div class="ginput_container ginput_container_textarea"><textarea name="input_4" id="input_2_4" class="textarea medium" aria-invalid="false" rows="10" cols="50" placeholder="הערות"></textarea></div></li></ul></div>
+        <div class="gform-footer gform_footer top_label"> <input type="submit" id="gform_submit_button_2" class="gform_button button" onclick="gform.submission.handleButtonClick(this);" data-submission-type="submit" value="שליחה »" placeholder=""> <input type="hidden" name="gform_ajax" value="form_id=2&amp;title=&amp;description=&amp;tabindex=0&amp;theme=legacy&amp;styles=[]&amp;hash=40d854f57ea459218132499e24ce6454">
+            <input type="hidden" class="gform_hidden" name="gform_submission_method" data-js="gform_submission_method_2" value="iframe">
+            <input type="hidden" class="gform_hidden" name="gform_theme" data-js="gform_theme_2" id="gform_theme_2" value="legacy">
+            <input type="hidden" class="gform_hidden" name="gform_style_settings" data-js="gform_style_settings_2" id="gform_style_settings_2" value="[]">
+            <input type="hidden" class="gform_hidden" name="is_submit_2" value="1">
+            <input type="hidden" class="gform_hidden" name="gform_submit" value="2">
+            
+            <input type="hidden" class="gform_hidden" name="gform_unique_id" value="">
+            <input type="hidden" class="gform_hidden" name="state_2" value="WyJbXSIsIjZmZGJkY2VmNDMzODBhODhlYzRlNDdmYjZmOGVhZjhiIl0=">
+            <input type="hidden" autocomplete="off" class="gform_hidden" name="gform_target_page_number_2" id="gform_target_page_number_2" value="0">
+            <input type="hidden" autocomplete="off" class="gform_hidden" name="gform_source_page_number_2" id="gform_source_page_number_2" value="1">
+            <input type="hidden" name="gform_field_values" value="">
+            
+        </div>
+                        </form>
+                        </div><span id="gform_visibility_test_2"></span>
+		                <iframe style="display:none;width:0px;height:0px;" src="about:blank" name="gform_ajax_frame_2" id="gform_ajax_frame_2" title="Iframe זה מכיל את התנאי הנדרש לטיפול ב-Gravity Forms באמצעות Ajax."></iframe>
+		                <script type="text/javascript">
+/* <![CDATA[ */
+ gform.initializeOnLoaded( function() {gformInitSpinner( 2, 'https://mypsy.co.il/wp-content/plugins/gravityforms/images/spinner.svg', true );jQuery('#gform_ajax_frame_2').on('load',function(){var contents = jQuery(this).contents().find('*').html();var is_postback = contents.indexOf('GF_AJAX_POSTBACK') >= 0;if(!is_postback){return;}var form_content = jQuery(this).contents().find('#gform_wrapper_2');var is_confirmation = jQuery(this).contents().find('#gform_confirmation_wrapper_2').length > 0;var is_redirect = contents.indexOf('gformRedirect(){') >= 0;var is_form = form_content.length > 0 && ! is_redirect && ! is_confirmation;var mt = parseInt(jQuery('html').css('margin-top'), 10) + parseInt(jQuery('body').css('margin-top'), 10) + 100;if(is_form){jQuery('#gform_wrapper_2').html(form_content.html());if(form_content.hasClass('gform_validation_error')){jQuery('#gform_wrapper_2').addClass('gform_validation_error');} else {jQuery('#gform_wrapper_2').removeClass('gform_validation_error');}setTimeout( function() { /* delay the scroll by 50 milliseconds to fix a bug in chrome */ jQuery(document).scrollTop(jQuery('#gform_wrapper_2').offset().top - mt); }, 50 );if(window['gformInitDatepicker']) {gformInitDatepicker();}if(window['gformInitPriceFields']) {gformInitPriceFields();}var current_page = jQuery('#gform_source_page_number_2').val();gformInitSpinner( 2, 'https://mypsy.co.il/wp-content/plugins/gravityforms/images/spinner.svg', true );jQuery(document).trigger('gform_page_loaded', [2, current_page]);window['gf_submitting_2'] = false;}else if(!is_redirect){var confirmation_content = jQuery(this).contents().find('.GF_AJAX_POSTBACK').html();if(!confirmation_content){confirmation_content = contents;}jQuery('#gform_wrapper_2').replaceWith(confirmation_content);jQuery(document).scrollTop(jQuery('#gf_2').offset().top - mt);jQuery(document).trigger('gform_confirmation_loaded', [2]);window['gf_submitting_2'] = false;wp.a11y.speak(jQuery('#gform_confirmation_message_2').text());}else{jQuery('#gform_2').append(contents);if(window['gformRedirect']) {gformRedirect();}}jQuery(document).trigger("gform_pre_post_render", [{ formId: "2", currentPage: "current_page", abort: function() { this.preventDefault(); } }]);        if (event && event.defaultPrevented) {                return;        }        const gformWrapperDiv = document.getElementById( "gform_wrapper_2" );        if ( gformWrapperDiv ) {            const visibilitySpan = document.createElement( "span" );            visibilitySpan.id = "gform_visibility_test_2";            gformWrapperDiv.insertAdjacentElement( "afterend", visibilitySpan );        }        const visibilityTestDiv = document.getElementById( "gform_visibility_test_2" );        let postRenderFired = false;        function triggerPostRender() {            if ( postRenderFired ) {                return;            }            postRenderFired = true;            gform.core.triggerPostRenderEvents( 2, current_page );            if ( visibilityTestDiv ) {                visibilityTestDiv.parentNode.removeChild( visibilityTestDiv );            }        }        function debounce( func, wait, immediate ) {            var timeout;            return function() {                var context = this, args = arguments;                var later = function() {                    timeout = null;                    if ( !immediate ) func.apply( context, args );                };                var callNow = immediate && !timeout;                clearTimeout( timeout );                timeout = setTimeout( later, wait );                if ( callNow ) func.apply( context, args );            };        }        const debouncedTriggerPostRender = debounce( function() {            triggerPostRender();        }, 200 );        if ( visibilityTestDiv && visibilityTestDiv.offsetParent === null ) {            const observer = new MutationObserver( ( mutations ) => {                mutations.forEach( ( mutation ) => {                    if ( mutation.type === 'attributes' && visibilityTestDiv.offsetParent !== null ) {                        debouncedTriggerPostRender();                        observer.disconnect();                    }                });            });            observer.observe( document.body, {                attributes: true,                childList: false,                subtree: true,                attributeFilter: [ 'style', 'class' ],            });        } else {            triggerPostRender();        }    } );} ); 
+/* ]]> */
+</script>
+<p></p></div>		
+</div></div></section>
+					
+				</div>
+				
+				
+								
+				
+			</div>
+			
+			
+
+		</div>
+	</div>
+	
+	
+	
+	
+		<div id="block-footer" class="bg-white">
+		<div class="block-footer wrapper ">
+		
+			<footer id="footer">
+
+				
+				<div class="module widget_text  deepest">
+
+			<center>
+<div style="margin-top:45px;">
+<a class="wcopy" href="http://www.wisy.co.il" target="_blank" rel="nofollow">Wisy - שיווק באינטרנט</a>
+</div>
+</center>		
+</div>
+			</footer>
+			
+
+		</div>
+	</div>
+		
+
+
+<script type="speculationrules">
+{"prefetch":[{"source":"document","where":{"and":[{"href_matches":"\/*"},{"not":{"href_matches":["\/wp-*.php","\/wp-admin\/*","\/wp-content\/uploads\/*","\/wp-content\/*","\/wp-content\/plugins\/*","\/wp-content\/themes\/yoo_infinite_wp\/*","\/*\\?(.+)"]}},{"not":{"selector_matches":"a[rel~=\"nofollow\"]"}},{"not":{"selector_matches":".no-prefetch, .no-prefetch a"}}]},"eagerness":"conservative"}]}
+</script>
+<link rel="stylesheet" id="gforms_reset_css-css" href="https://mypsy.co.il/wp-content/plugins/gravityforms/legacy/css/formreset.min.css?ver=2.9.23" type="text/css" media="all">
+<link rel="stylesheet" id="gforms_formsmain_css-css" href="https://mypsy.co.il/wp-content/plugins/gravityforms/legacy/css/formsmain.min.css?ver=2.9.23" type="text/css" media="all">
+<link rel="stylesheet" id="gforms_ready_class_css-css" href="https://mypsy.co.il/wp-content/plugins/gravityforms/legacy/css/readyclass.min.css?ver=2.9.23" type="text/css" media="all">
+<link rel="stylesheet" id="gforms_browsers_css-css" href="https://mypsy.co.il/wp-content/plugins/gravityforms/legacy/css/browsers.min.css?ver=2.9.23" type="text/css" media="all">
+<link rel="stylesheet" id="gforms_rtl_css-css" href="https://mypsy.co.il/wp-content/plugins/gravityforms/legacy/css/rtl.min.css?ver=2.9.23" type="text/css" media="all">
+<script type="text/javascript" src="https://mypsy.co.il/wp-includes/js/dist/dom-ready.min.js?ver=f77871ff7694fffea381" id="wp-dom-ready-js"></script>
+<script type="text/javascript" src="https://mypsy.co.il/wp-includes/js/dist/hooks.min.js?ver=4d63a3d491d11ffd8ac6" id="wp-hooks-js"></script>
+<script type="text/javascript" src="https://mypsy.co.il/wp-includes/js/dist/i18n.min.js?ver=5e580eb46a90c2b997e6" id="wp-i18n-js"></script>
+<script type="text/javascript" id="wp-i18n-js-after">
+/* <![CDATA[ */
+wp.i18n.setLocaleData( { 'text direction\u0004ltr': [ 'rtl' ] } );
+/* ]]> */
+</script>
+<script type="text/javascript" id="wp-a11y-js-translations">
+/* <![CDATA[ */
+( function( domain, translations ) {
+	var localeData = translations.locale_data[ domain ] || translations.locale_data.messages;
+	localeData[""].domain = domain;
+	wp.i18n.setLocaleData( localeData, domain );
+} )( "default", {"translation-revision-date":"2023-05-28 22:06:16+0000","generator":"GlotPress\/4.0.1","domain":"messages","locale_data":{"messages":{"":{"domain":"messages","plural-forms":"nplurals=2; plural=n != 1;","lang":"he_IL"},"Notifications":["\u05d4\u05ea\u05e8\u05d0\u05d5\u05ea"]}},"comment":{"reference":"wp-includes\/js\/dist\/a11y.js"}} );
+/* ]]> */
+</script>
+<script type="text/javascript" src="https://mypsy.co.il/wp-includes/js/dist/a11y.min.js?ver=3156534cc54473497e14" id="wp-a11y-js"></script>
+<script type="text/javascript" defer="defer" src="https://mypsy.co.il/wp-content/plugins/gravityforms/js/jquery.json.min.js?ver=2.9.23" id="gform_json-js"></script>
+<script type="text/javascript" id="gform_gravityforms-js-extra">
+/* <![CDATA[ */
+var gform_i18n = {"datepicker":{"days":{"monday":"Mo","tuesday":"Tu","wednesday":"We","thursday":"Th","friday":"Fr","saturday":"Sa","sunday":"Su"},"months":{"january":"\u05d9\u05e0\u05d5\u05d0\u05e8","february":"\u05e4\u05d1\u05e8\u05d5\u05d0\u05e8","march":"\u05de\u05e8\u05e5","april":"\u05d0\u05e4\u05e8\u05d9\u05dc","may":"\u05de\u05d0\u05d9","june":"\u05d9\u05d5\u05e0\u05d9","july":"\u05d9\u05d5\u05dc\u05d9","august":"\u05d0\u05d5\u05d2\u05d5\u05e1\u05d8","september":"\u05e1\u05e4\u05d8\u05de\u05d1\u05e8","october":"\u05d0\u05d5\u05e7\u05d8\u05d5\u05d1\u05e8","november":"\u05e0\u05d5\u05d1\u05de\u05d1\u05e8","december":"\u05d3\u05e6\u05de\u05d1\u05e8"},"firstDay":1,"iconText":"Select date"}};
+var gf_legacy_multi = [];
+var gform_gravityforms = {"strings":{"invalid_file_extension":"\u05e1\u05d5\u05d2 \u05d6\u05d4 \u05e9\u05dc \u05e7\u05d5\u05d1\u05e5 \u05d0\u05e1\u05d5\u05e8. \u05d7\u05d9\u05d9\u05d1 \u05dc\u05d4\u05d9\u05d5\u05ea \u05d0\u05d7\u05d3 \u05de\u05d4\u05d1\u05d0\u05d9\u05dd:","delete_file":"\u05de\u05d7\u05e7 \u05e7\u05d5\u05d1\u05e5 \u05d6\u05d4","in_progress":"\u05d1\u05ea\u05d4\u05dc\u05d9\u05da","file_exceeds_limit":"\u05d4\u05e7\u05d5\u05d1\u05e5 \u05d7\u05d5\u05e8\u05d2 \u05de\u05de\u05d2\u05d1\u05dc\u05ea \u05d4\u05d2\u05d5\u05d3\u05dc","illegal_extension":"\u05e1\u05d5\u05d2 \u05d6\u05d4 \u05e9\u05dc \u05e7\u05d5\u05d1\u05e5 \u05d0\u05e1\u05d5\u05e8.","max_reached":"\u05d4\u05d2\u05e2\u05ea \u05dc\u05de\u05e1\u05e4\u05e8 \u05d4\u05e7\u05d1\u05e6\u05d9\u05dd \u05d4\u05de\u05e8\u05d1\u05d9","unknown_error":"\u05d0\u05d9\u05e8\u05e2\u05d4 \u05d1\u05e2\u05d9\u05d4 \u05d1\u05e9\u05de\u05d9\u05e8\u05ea \u05d4\u05e7\u05d5\u05d1\u05e5 \u05d1\u05e9\u05e8\u05ea","currently_uploading":"\u05e0\u05d0 \u05dc\u05d4\u05de\u05ea\u05d9\u05df \u05dc\u05e1\u05d9\u05d5\u05dd \u05d4\u05d4\u05e2\u05dc\u05d0\u05d4","cancel":"\u05d1\u05d9\u05d8\u05d5\u05dc","cancel_upload":"\u05d1\u05d8\u05dc \u05d4\u05e2\u05dc\u05d0\u05ea \u05e7\u05d5\u05d1\u05e5","cancelled":"\u05d1\u05d5\u05d8\u05dc","error":"\u05e9\u05d2\u05d9\u05d0\u05d4","message":"\u05d4\u05d5\u05d3\u05e2\u05d4"},"vars":{"images_url":"https:\/\/mypsy.co.il\/wp-content\/plugins\/gravityforms\/images"}};
+var gf_global = {"gf_currency_config":{"name":"\u05d3\u05d5\u05dc\u05e8 \u05d0\u05de\u05e8\u05d9\u05e7\u05d0\u05d9","symbol_left":"$","symbol_right":"","symbol_padding":"","thousand_separator":",","decimal_separator":".","decimals":2,"code":"USD"},"base_url":"https:\/\/mypsy.co.il\/wp-content\/plugins\/gravityforms","number_formats":[],"spinnerUrl":"https:\/\/mypsy.co.il\/wp-content\/plugins\/gravityforms\/images\/spinner.svg","version_hash":"17dc3748d8be80d49b699aba362f3f8b","strings":{"newRowAdded":"\u05e0\u05d5\u05e1\u05e4\u05d4 \u05e9\u05d5\u05e8\u05d4 \u05d7\u05d3\u05e9\u05d4.","rowRemoved":"\u05e9\u05d5\u05e8\u05d4 \u05d4\u05d5\u05e1\u05e8\u05d4","formSaved":"\u05d4\u05d8\u05d5\u05e4\u05e1 \u05e0\u05e9\u05de\u05e8. \u05d4\u05ea\u05d5\u05db\u05df \u05de\u05db\u05d9\u05dc \u05d0\u05ea \u05d4\u05e7\u05d9\u05e9\u05d5\u05e8 \u05dc\u05d7\u05d6\u05e8\u05d4 \u05d5\u05de\u05d9\u05dc\u05d5\u05d9 \u05d4\u05d8\u05d5\u05e4\u05e1."}};
+/* ]]> */
+</script>
+<script type="text/javascript" defer="defer" src="https://mypsy.co.il/wp-content/plugins/gravityforms/js/gravityforms.min.js?ver=2.9.23" id="gform_gravityforms-js"></script>
+<script type="text/javascript" defer="defer" src="https://mypsy.co.il/wp-content/plugins/gravityforms/assets/js/dist/utils.min.js?ver=380b7a5ec0757c78876bc8a59488f2f3" id="gform_gravityforms_utils-js"></script>
+<script type="text/javascript" defer="defer" src="https://mypsy.co.il/wp-content/plugins/gravityforms/assets/js/dist/vendor-theme.min.js?ver=8673c9a2ff188de55f9073009ba56f5e" id="gform_gravityforms_theme_vendors-js"></script>
+<script type="text/javascript" id="gform_gravityforms_theme-js-extra">
+/* <![CDATA[ */
+var gform_theme_config = {"common":{"form":{"honeypot":{"version_hash":"17dc3748d8be80d49b699aba362f3f8b"},"ajax":{"ajaxurl":"https:\/\/mypsy.co.il\/wp-admin\/admin-ajax.php","ajax_submission_nonce":"449ee4e0c0","i18n":{"step_announcement":"Step %1$s of %2$s, %3$s","unknown_error":"There was an unknown error processing your request. Please try again."}}}},"hmr_dev":"","public_path":"https:\/\/mypsy.co.il\/wp-content\/plugins\/gravityforms\/assets\/js\/dist\/","config_nonce":"d04ab54078"};
+/* ]]> */
+</script>
+<script type="text/javascript" defer="defer" src="https://mypsy.co.il/wp-content/plugins/gravityforms/assets/js/dist/scripts-theme.min.js?ver=96b168b3a480baf99058dabf9338533b" id="gform_gravityforms_theme-js"></script>
+<script type="text/javascript">
+/* <![CDATA[ */
+ gform.initializeOnLoaded( function() { jQuery(document).on('gform_post_render', function(event, formId, currentPage){if(formId == 2) {} } );jQuery(document).on('gform_post_conditional_logic', function(event, formId, fields, isInit){} ) } ); 
+/* ]]> */
+</script>
+<script type="text/javascript">
+/* <![CDATA[ */
+ gform.initializeOnLoaded( function() {jQuery(document).trigger("gform_pre_post_render", [{ formId: "2", currentPage: "1", abort: function() { this.preventDefault(); } }]);        if (event && event.defaultPrevented) {                return;        }        const gformWrapperDiv = document.getElementById( "gform_wrapper_2" );        if ( gformWrapperDiv ) {            const visibilitySpan = document.createElement( "span" );            visibilitySpan.id = "gform_visibility_test_2";            gformWrapperDiv.insertAdjacentElement( "afterend", visibilitySpan );        }        const visibilityTestDiv = document.getElementById( "gform_visibility_test_2" );        let postRenderFired = false;        function triggerPostRender() {            if ( postRenderFired ) {                return;            }            postRenderFired = true;            gform.core.triggerPostRenderEvents( 2, 1 );            if ( visibilityTestDiv ) {                visibilityTestDiv.parentNode.removeChild( visibilityTestDiv );            }        }        function debounce( func, wait, immediate ) {            var timeout;            return function() {                var context = this, args = arguments;                var later = function() {                    timeout = null;                    if ( !immediate ) func.apply( context, args );                };                var callNow = immediate && !timeout;                clearTimeout( timeout );                timeout = setTimeout( later, wait );                if ( callNow ) func.apply( context, args );            };        }        const debouncedTriggerPostRender = debounce( function() {            triggerPostRender();        }, 200 );        if ( visibilityTestDiv && visibilityTestDiv.offsetParent === null ) {            const observer = new MutationObserver( ( mutations ) => {                mutations.forEach( ( mutation ) => {                    if ( mutation.type === 'attributes' && visibilityTestDiv.offsetParent !== null ) {                        debouncedTriggerPostRender();                        observer.disconnect();                    }                });            });            observer.observe( document.body, {                attributes: true,                childList: false,                subtree: true,                attributeFilter: [ 'style', 'class' ],            });        } else {            triggerPostRender();        }    } ); 
+/* ]]> */
+</script>
+<style>
+#block-header {
+background: #5a7431 url('http://www.mypsy.co.il/wp-content/themes/yoo_infinite_wp/images/menu-2px.png') 0 repeat-x !important;
+}
+#footer {
+margin-top: 15px;
+}
+</style><center>
+<div style="margin-top:15px;">
+<a class="wcopy" target="_blank" href="https://plus.google.com/106954762837127900885/about" rel="me">Google+</a>
+</div>
+</center>
+
+
+
+<script defer="" src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015" integrity="sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ==" data-cf-beacon="{&quot;version&quot;:&quot;2024.11.0&quot;,&quot;token&quot;:&quot;9944526787264704a9171de8acf2ba91&quot;,&quot;r&quot;:1,&quot;server_timing&quot;:{&quot;name&quot;:{&quot;cfCacheStatus&quot;:true,&quot;cfEdge&quot;:true,&quot;cfExtPri&quot;:true,&quot;cfL4&quot;:true,&quot;cfOrigin&quot;:true,&quot;cfSpeedBrain&quot;:true},&quot;location_startswith&quot;:null}}" crossorigin="anonymous"></script>
+
+
+
+
+
+<p id="a11y-speak-intro-text" class="a11y-speak-intro-text" style="position: absolute;margin: -1px;padding: 0;height: 1px;width: 1px;overflow: hidden;clip: rect(1px, 1px, 1px, 1px);-webkit-clip-path: inset(50%);clip-path: inset(50%);border: 0;word-wrap: normal !important;" hidden="hidden">התראות</p><div id="a11y-speak-assertive" class="a11y-speak-region" style="position: absolute;margin: -1px;padding: 0;height: 1px;width: 1px;overflow: hidden;clip: rect(1px, 1px, 1px, 1px);-webkit-clip-path: inset(50%);clip-path: inset(50%);border: 0;word-wrap: normal !important;" aria-live="assertive" aria-relevant="additions text" aria-atomic="true"></div><div id="a11y-speak-polite" class="a11y-speak-region" style="position: absolute;margin: -1px;padding: 0;height: 1px;width: 1px;overflow: hidden;clip: rect(1px, 1px, 1px, 1px);-webkit-clip-path: inset(50%);clip-path: inset(50%);border: 0;word-wrap: normal !important;" aria-live="polite" aria-relevant="additions text" aria-atomic="true"></div></body></html></div>
+    <script src="/script.js"></script>
+    <script id="zappy-mobile-submenu-script">
+    (function() {
+      function initMobileSubmenuToggles() {
+        if (window.innerWidth > 768) { document.querySelectorAll('.mobile-submenu-toggle').forEach(function(b){b.remove();}); document.querySelectorAll('.sub-menu.mobile-expanded').forEach(function(m){m.classList.remove('mobile-expanded');}); return; }
+        document.querySelectorAll('.nav-menu li:has(.sub-menu), nav li:has(.sub-menu), .navbar li:has(.sub-menu), #navMenu li:has(.sub-menu)').forEach(function(li) {
+          if (li.querySelector('.mobile-submenu-toggle')) return;
+          var sm = li.querySelector('.sub-menu'), pl = li.querySelector(':scope > a');
+          if (!sm || !pl) return;
+          var tb = document.createElement('button'); tb.className = 'mobile-submenu-toggle'; tb.setAttribute('aria-label', 'Toggle submenu'); tb.setAttribute('type', 'button');
+          pl.insertAdjacentElement('afterend', tb);
+          tb.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation();
+            document.querySelectorAll('.sub-menu.mobile-expanded').forEach(function(m) { if (m !== sm) { m.classList.remove('mobile-expanded'); var t = m.parentElement.querySelector('.mobile-submenu-toggle'); if(t) t.classList.remove('expanded'); }});
+            sm.classList.toggle('mobile-expanded'); tb.classList.toggle('expanded');
+          });
+        });
+      }
+      if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', initMobileSubmenuToggles); } else { initMobileSubmenuToggles(); }
+      window.addEventListener('resize', function() { clearTimeout(window._mrt); window._mrt = setTimeout(initMobileSubmenuToggles, 250); });
+    })();
+    </script>
+</body>
+</html>

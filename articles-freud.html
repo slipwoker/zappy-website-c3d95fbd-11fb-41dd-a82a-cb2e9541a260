@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>טיפול נפשי למבוגרים | טיפול פסיכולוגי והמודל הקתרטי</title>
+    <meta name="description" content="">
+    <meta name="keywords" content="">
+    
+    <!-- Zappy Analytics -->
+<script>
+(function() {
+  'use strict';
+  
+  // Configuration
+  var config = {
+    websiteId: 'c3d95fbd-11fb-41dd-a82a-cb2e9541a260',
+    apiUrl: 'http://localhost:5001/api/analytics/track',
+    sessionDuration: 30 * 60 * 1000, // 30 minutes
+    visitorDuration: 30 * 24 * 60 * 60 * 1000, // 30 days
+    trackPageViews: true,
+    trackClicks: true,
+    trackFormSubmissions: true
+  };
+  
+  // Generate or retrieve persistent visitor ID (30 days)
+  function getVisitorId() {
+    var visitorKey = 'zappy_visitor_' + config.websiteId;
+    var visitor = null;
+    
+    try {
+      visitor = localStorage.getItem(visitorKey);
+      if (visitor) {
+        var visitorData = JSON.parse(visitor);
+        var now = Date.now();
+        
+        // Check if visitor ID is still valid (30 days)
+        if (now - visitorData.created < config.visitorDuration) {
+          // Update last seen timestamp
+          visitorData.lastSeen = now;
+          localStorage.setItem(visitorKey, JSON.stringify(visitorData));
+          return visitorData.id;
+        }
+      }
+    } catch (e) {
+      console.warn('Zappy Analytics: LocalStorage not available');
+    }
+    
+    // Generate new visitor ID
+    var newVisitorId = 'zv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    try {
+      localStorage.setItem(visitorKey, JSON.stringify({
+        id: newVisitorId,
+        created: Date.now(),
+        lastSeen: Date.now()
+      }));
+    } catch (e) {
+      // Continue without local storage
+    }
+    
+    return newVisitorId;
+  }
+  
+  // Generate or retrieve session ID (30 minutes)
+  function getSessionId() {
+    var sessionKey = 'zappy_session_' + config.websiteId;
+    var session = null;
+    
+    try {
+      session = sessionStorage.getItem(sessionKey);
+      if (session) {
+        var sessionData = JSON.parse(session);
+        var now = Date.now();
+        
+        // Check if session is still valid
+        if (now - sessionData.timestamp < config.sessionDuration) {
+          // Update timestamp
+          sessionData.timestamp = now;
+          sessionStorage.setItem(sessionKey, JSON.stringify(sessionData));
+          return sessionData.id;
+        }
+      }
+    } catch (e) {
+      console.warn('Zappy Analytics: SessionStorage not available');
+    }
+    
+    // Generate new session ID
+    var newSessionId = 'zs_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    try {
+      sessionStorage.setItem(sessionKey, JSON.stringify({
+        id: newSessionId,
+        timestamp: Date.now()
+      }));
+    } catch (e) {
+      // Continue without session storage
+    }
+    
+    return newSessionId;
+  }
+  
+  var visitorId = getVisitorId();
+  var sessionId = getSessionId();
+  
+  // Track an event
+  function trackEvent(eventType, data) {
+    data = data || {};
+    
+    var eventData = {
+      website_id: config.websiteId,
+      event_type: eventType,
+      page_path: window.location.pathname,
+      referrer: document.referrer || 'direct',
+      visitor_id: visitorId,
+      session_id: sessionId,
+      metadata: data
+    };
+    
+    // Use sendBeacon if available (better for page unload events)
+    if (navigator.sendBeacon) {
+      var blob = new Blob([JSON.stringify(eventData)], { type: 'application/json' });
+      navigator.sendBeacon(config.apiUrl, blob);
+    } else {
+      // Fallback to fetch
+      fetch(config.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(eventData),
+        keepalive: true
+      }).catch(function(error) {
+        console.warn('Zappy Analytics: Failed to track event', error);
+      });
+    }
+  }
+  
+  // Track page view
+  if (config.trackPageViews) {
+    trackEvent('pageview', {
+      title: document.title,
+      url: window.location.href
+    });
+  }
+  
+  // Track clicks on important elements
+  if (config.trackClicks) {
+    document.addEventListener('click', function(e) {
+      var target = e.target;
+      
+      // Track button clicks (counted as actions)
+      if (target.tagName === 'BUTTON' || target.closest('button')) {
+        var button = target.tagName === 'BUTTON' ? target : target.closest('button');
+        trackEvent('click', {
+          element: 'button',
+          text: button.textContent.trim().substring(0, 100),
+          id: button.id || null,
+          class: button.className || null
+        });
+      }
+      
+      // Track link clicks (navigation - not counted as actions)
+      else if (target.tagName === 'A' || target.closest('a')) {
+        var link = target.tagName === 'A' ? target : target.closest('a');
+        trackEvent('navigation', {
+          element: 'link',
+          text: link.textContent.trim().substring(0, 100),
+          href: link.href,
+          external: link.hostname !== window.location.hostname
+        });
+      }
+    }, true);
+  }
+  
+  // Track form submissions
+  if (config.trackFormSubmissions) {
+    document.addEventListener('submit', function(e) {
+      var form = e.target;
+      
+      trackEvent('form_submit', {
+        form_id: form.id || null,
+        form_name: form.name || null,
+        form_action: form.action || null,
+        form_method: form.method || 'GET'
+      });
+    }, true);
+  }
+  
+  // Track time on page (send on page unload)
+  var pageLoadTime = Date.now();
+  
+  window.addEventListener('beforeunload', function() {
+    var timeOnPage = Math.floor((Date.now() - pageLoadTime) / 1000); // in seconds
+    
+    trackEvent('page_unload', {
+      time_on_page: timeOnPage,
+      page_path: window.location.pathname
+    });
+  });
+  
+  // Expose tracking function globally for custom events
+  window.zappyAnalytics = {
+    track: trackEvent,
+    getVisitorId: function() { return visitorId; },
+    getSessionId: function() { return sessionId; }
+  };
+  
+})();
+</script>
+<!-- End Zappy Analytics -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="/styles.css">
+    <style id="zappy-mobile-submenu-styles">
+      @media (max-width: 768px) {
+        .nav-menu .sub-menu, nav .sub-menu, .navbar .sub-menu, #navMenu .sub-menu { position: static !important; transform: none !important; box-shadow: none !important; background: transparent !important; max-height: 0; overflow: hidden; opacity: 0; visibility: hidden; transition: max-height 0.3s ease, opacity 0.3s ease; padding: 0 !important; }
+        .sub-menu.mobile-expanded { max-height: 500px !important; opacity: 1 !important; visibility: visible !important; padding: 8px 0 8px 16px !important; }
+        [dir="rtl"] .sub-menu.mobile-expanded, html[lang="he"] .sub-menu.mobile-expanded { padding: 8px 16px 8px 0 !important; }
+        .nav-menu li:hover > .sub-menu, nav li:hover > .sub-menu, .navbar li:hover > .sub-menu, #navMenu li:hover > .sub-menu { opacity: 0; visibility: hidden; }
+        .nav-menu li > .sub-menu.mobile-expanded, nav li > .sub-menu.mobile-expanded, .navbar li > .sub-menu.mobile-expanded, #navMenu li > .sub-menu.mobile-expanded { opacity: 1 !important; visibility: visible !important; pointer-events: auto !important; }
+        .nav-menu li:has(.sub-menu), nav li:has(.sub-menu), .navbar li:has(.sub-menu), #navMenu li:has(.sub-menu) { display: flex !important; flex-wrap: wrap !important; align-items: center !important; }
+        .nav-menu li:has(.sub-menu) > a, nav li:has(.sub-menu) > a, .navbar li:has(.sub-menu) > a, #navMenu li:has(.sub-menu) > a { flex: 1 !important; }
+        .mobile-submenu-toggle { display: flex !important; align-items: center !important; justify-content: center !important; width: 44px !important; height: 44px !important; background: transparent !important; border: none !important; cursor: pointer !important; }
+        .mobile-submenu-toggle::after { content: '' !important; display: block !important; width: 0 !important; height: 0 !important; border-left: 6px solid transparent !important; border-right: 6px solid transparent !important; border-top: 7px solid currentColor !important; transition: transform 0.3s ease !important; }
+        .mobile-submenu-toggle.expanded::after { transform: rotate(180deg) !important; }
+        .nav-menu li:has(.sub-menu) > .sub-menu, nav li:has(.sub-menu) > .sub-menu, .navbar li:has(.sub-menu) > .sub-menu, #navMenu li:has(.sub-menu) > .sub-menu { flex-basis: 100% !important; width: 100% !important; }
+        .sub-menu a { padding: 10px 0 !important; display: block !important; }
+      }
+      @media (min-width: 769px) { .mobile-submenu-toggle { display: none !important; } }
+    </style>
+</head>
+<body>
+<div dir="rtl" class="zappy-rtl-wrapper" style="direction: rtl; text-align: right;"><html><head></head><body><div id="headed"><center>
+<a href="/" title="עוזי כרמי"><div style="width:450px;height:250px;position: absolute;" id="bigme"></div></a>
+<img src="/assets/dd5296a9-5b1a-41ec-a5ea-95bb0da29c39.jpg" alt="עוזי כרמי"></center>
+</div>
+
+<div id="LogoText2" style="display:none;">לקביעת פגישת היכרות&nbsp; <span id="phoneme"> התקשרו <a href="tel:054-5757040">054-5757040</a></span></div>
+
+
+		
+	<div id="block-header">
+		<div class="block-header wrapper ">
+				
+			<header id="header" class="clearfix">
+							<div id="banner"><div class="textwidget"><div id="LogoText">לקביעת פגישת היכרות&nbsp; <span id="phoneme">
+<br>
+ התקשרו: <a href="tel:054-5757040">054-5757040</a></span></div></div></div>
+								
+				
+								<div id="menubar">
+					
+										<nav id="menu"><ul class="menu menu-dropdown"><li class="level1 item674"><a href="/" class="level1"><span>פסיכולוג קליני</span></a></li><li class="level1 item673"><a href="/background" class="level1"><span>רקע והכשרה</span></a></li><li class="level1 item685"><a href="/psychology" class="level1"><span>מה זה טיפול פסיכולוגי ?</span></a></li><li class="level1 item813"><a href="/difficulties" class="level1"><span>קשיים שונים</span></a></li><li class="level1 item698"><a href="/faq" class="level1"><span>שאלות ותשובות</span></a></li><li class="level1 item721"><a href="/articles" class="level1"><span>מאמרים</span></a></li><li class="level1 item723"><a href="/contact" class="level1"><span>צור קשר</span></a></li></ul></nav>
+					
+										
+				</div>
+				
+				
+
+
+			</header>
+
+		</div>
+
+	</div>
+		<div id="header2"><h1 class="title">טיפול פסיכולוגי ראשון – פרויד והמודל הקתרטי</h1></div>
+	
+	
+	
+					
+				
+	<div id="block-main" class="bg-white">	
+		<div class="block-main wrapper ">
+			
+			<div id="main" class="grid-block" style="display: flex !important; flex-wrap: wrap !important; gap: 30px !important;">
+
+				<div id="maininner" class="grid-box" style="min-height: 4503px;; flex: 1 1 auto !important; min-width: 0 !important">
+					<section id="innertop" class="grid-block">
+					
+					
+					</section>
+					
+					
+										<section id="content" class="grid-block"><div id="system">
+
+					
+		<div id="sidebart">
+											<img width="308" height="414" src="/assets/8b838ca6-e293-4cf4-a623-9e5cfd7e833d.jpg" class="size-auto wp-post-image" alt="" decoding="async" fetchpriority="high" srcset="/assets/8b838ca6-e293-4cf4-a623-9e5cfd7e833d.jpg 308w, /assets/d9d0c145-3ceb-46d5-ba8c-1352a4716b33.jpg 120w" sizes="(max-width: 308px) 100vw, 308px">						</div>
+		
+		<article class="item" data-permalink="https://mypsy.co.il/articles/freud/">
+		
+		
+
+
+			<div class="content clearfix"><p dir="rtl">כשהיתה בת עשרים ואחת חלה אביה של ברתה פפנהיים במחלה סופנית. השנה הייתה 1880, וברתה, צעירה יהודיה, נמרצת ומלאת חיים, שימשה לאביה אחות רחמנייה. במהלך החודשים הבאים היא פיתחה בהדרגה סימפטומים היסטריים שהחלישו אותה יותר ויותר, עד שהפכה לשבר כלי. היא לקתה בפזילה חמורה, סבלה מכאבי ראש, התקפי התרגשות, הפרעות בראיה, שיתוקים חלקיים ואבדן תחושה. בתחילת 1881 הסימפטומים הפכו למוזרים עוד יותר. היא חוותה התקפים של אובדן זיכרון, פרקי שינה ממושכים, תהפוכות מהירות במצב רוחה, הזיות בהן שערותיה נראו לה כנחשים שחורים וקשיים גוברים בדיבור, לעיתים לא יכלה לדבר אלא אנגלית או צרפתית ואיטלקית. היא פיתחה שתי אישיויות מנוגדות שאחת מהן הייתה פרועה בצורה קיצונית.</p>
+<p dir="rtl">ברתה פנתה ליוזף ברוייר, רופא וינאי נכבד, שנפגש עימה במשך כשנה וחצי. בפגישות אלו המציאו השניים, יש מאין את הטיפול הפסיכולוגי. ביוני 1882 חלפו כל הסימפטומים של ברתה (ראוי לציין שחלקם חזרו מאוחר יותר) וברוייר ציין ביומנו באגביות שהיא סיימה את הטיפול ונסעה לבית הבראה מחוץ לווינה.</p>
+<p dir="rtl">זהו המקרה המתועד הראשון שניתן לכנותו "טיפול פסיכולוגי". ברוייר התפעל מאוד מהמטופלת שלו וסיפר עליה לידידו הקרוב, זיגמונד פרויד. ב-1895 פירסמו השניים את הספר "מחקרים בהיסטריה". בספר כונתה ברתה "אנה או", וסיפור הטיפול שלה פותח אותו. טיפול זה הוא הזרע אותו יפתח פרויד במשך יתרת חייו, והתגליות שהתגלו בו מהווים את הבסיס לאחת מהיצירות הכבירות בתולדות האנושות – הפסיכואנליזה. הוא הווה את הבסיס למודל הראשון של פרויד לנפש האדם – המודל הקתרטי, או האקונומי.</p>
+<h2 dir="rtl">תיאור המקרה</h2>
+<p dir="rtl">אנה הייתה צעירה יוצאת דופן. ברוייר תארה במילים: "בעלת אינטליגנציה בולטת… אינטואיציה מרחיקת ראות. בעלת אינטלקט חזק המסוגל לעכל מזון רוחני ואף זקוק לו… בעלת כישרון פיוטי ודימיון עשיר שנשלט על-ידי תבונה חריפה וביקורתית".</p>
+<p dir="rtl">ברוייר הבחין במשיכה של אנה לאביה ובכך שמחלתו הקטלנית זרזה את ההיסטריה שלה. הוא הבחין גם בכך שאנה, שסיימה את לימודיה בבית-הספר, לא זכתה לגירוי אינטלקטואלי בבית משפחתה הבורגנית-יהודית ונטתה להימלט לחלומות בהקיץ. הוא נהג לבקרה מדי ערב. היא סיפרה לו סיפורים שהיו עצובים תמיד, ונחמדים לעיתים. השיחה הקלה על הסימפטומים שלה, כפי שהיא וברוייר גילו יחדיו.</p>
+<p dir="rtl">המפנה בטיפול חל באביב 1882. אנה נתקפה התקף דומה לבעת מים- הידרופוביה, ולא הייתה מסוגלת לשתות אף שהתענתה בצמא. ערב אחד, כשהייתה שרויה תחת היפנוזה, סיפרה לברוייר שראתה את בת לוויתה האנגלייה מניחה לכלב קטן לשתות מכוס מים. הכלב הגעיל אותה והיא נתקפה זעם, אך לא ביטאה דבר מתחושותיה כי רצתה להיות מנומסת. מייד אחר-כך פיתחה את בעת המים.&nbsp;<b>ההידרופוביה נעלמה מייד כשביטאה בגלוי את הכעס שהדחיקה.</b></p>
+<p dir="rtl">ברוייר גילה שכאשר הוא מניח לאנה לדבר באופן חופשי על הסימפטומים שלה כשהיא מצויה במצב "היפנואידי" היא מסוגלת להיזכר באירועים שנראו קשורים למקור הסימפטומים שלה, דבר שהביא להקלה. אנה עצמה כינתה זאת "ריפוי בדיבור" -talking cure&nbsp; והייתה לראשונה שהבינה כי לשיחה יכול להיות אפקט מרפא. היא כינתה את הטיפול גם בשם "ניקוי ארובות" ובכך תיארה בדרכה את תהליך האבריאקציה, הפורקן של אנרגיה רגשית. הדיבור הפך לתהליך מזכך עבורה כיוון שעורר זיכרונות חשובים ושיחרר רגשות חזקים שבאופן רגיל לא יכולה הייתה לזכור או לבטא.</p>
+<p dir="rtl">&nbsp;כך למשל, אנה סיפרה כיצד שקעה בחלימה בהקיץ ליד מיטת אביה וידה הימנית, שהיתה שעונה על מסעד הכיסא, נרדמה. היא הבחינה בנחש שחור וגדול עובר ליד ראש האב. היא רצתה לגרש את הנחש, אך ידה לא זזה. מתוך מצבה החולמני נדמו לה אצבעותיה לנחשים קטנים. אחר כך רצתה להתפלל מתוך פחד אך כל השפות שהכירה בגדו בה, עד שלבסוף נזכרה בשיר ילדים באנגלית. פרויד וברוייר סברו שאירוע זה היה אירוע מכונן במחלתה של אנה. כזכור, היא סבלה משיתוק ביד, ופרויד סבור שזהו שריד של היד שנרדמה על מסעד כיסא האב. שערותיה היו נדמות לה לנחשים – זכר הנחש. היא סבלה משכחה של גרמנית – ולפי פרויד היא חיה מחדש את זיכרון השיר האנגלי.</p>
+<p dir="rtl">ברוייר אימץ שיטה לא מקובלת זו להקל על החולה. הוא הפנט את אנה או. והבחין שתחת השפעת ההיפנוזה&nbsp;הייתה יכולה להתחקות אחר כל אחד מהסימפטומים שלה ולהגיע למאורע כלשהו הקשור למחלתו של אביה שהוליד את הסימפטום. בדרך זו נמוגו אגב דיבור כל הסימפטומים.</p>
+<h2 dir="rtl">פרויד</h2>
+<p dir="rtl">פרויד נולד ב- 1856, בשם סיגיסמונד פרויד, למשפחת סוחרים יהודית בעיירה פרייבורג, שהשתיכה אז לאימפריה האוסטרו-הונגרית. יעקב, אביו, היה אלמן ואב לשני בנים כשנשא לו לאישה בחורה צעירה בשם אמליה. סיגיסמונד היה בנם הראשון והאהוב. כשהיה בן ארבע עברה המשפחה להתגורר בוינה, שהייתה למקום מגוריו של פרויד עד שנמלט מהנאצים ב- 1938 ועבר ללונדון, בה נפטר ב- 1939. את לימודי הרפואה שלו עבר באוניברסיטת וינה, שם זכה ללמוד מגדולי המומחים באותה תקופה, ובינהם ארנסט ברוקה, הפיסיולוג הנודע. פרויד התפעל מאוד מברוקה והמשיך לעבוד במעבדתו. בחוגו של ברוקה פגש את יוזף ברוייר. רופא מצליח, המבוגר ממנו בארבע עשרה שנה והשניים התידדו עד מהרה.</p>
+<h2 dir="rtl">התיאוריה</h2>
+<h2 dir="rtl"></h2>
+<h2 dir="rtl"></h2>
+<p dir="rtl">פרויד וברוייר ניסחו תיאוריה בכדי להסביר את הטיפול באנה או. ובמטופלות נוספות שבאו בעקבותיה. תיאוריה זו, המכונה גם המודל האקונומי או המודל הקטרטי, הייתה הראשונה שניתן לקרוא לה תיאורית אישיות. פרויד הושפע משני מקורות מרכזיים: הניסויים שערך שארקו והמודלים הפיזיקליים ששלטו באותה תקופה.</p>
+<p dir="rtl">ז'אן מרטין שרקו (1825-1893) היה רופא שנולד בפאריז, ועבד בה במשך מרבית חייו. הוא לימד רפואה באוניברסיטה של פאריז ונחשב למדען ממדרגה ראשונה, למומחה מספר אחת בנוירולוגיה במאה ה-19 ולמורה מעורר אימה. עיקר עינינו של שארקו היה טיפול בחולי היסטריה.</p>
+<p dir="rtl">היסטריה היא הפרעה רגשית המתבטאת במגוון של סימפטומים פיזיים שהייתה מוכרת עוד למצרים וליוונים. באותה תקופה הרופאים זיהו מחלה שהופיעה בעיקר אצל בתולות ואלמנות והתבטאה בהתקפים שהזכירו אפילפסיה, כאבים בחלקי גוף שונים, אובדן של הקול, סחרחורת, עיוורון, קהות ומלנכוליה. היוונים יחסו את ההפרעה לתזוזה של הרחם ברחבי הגוף.</p>
+<p dir="rtl">שארקו התעניין בהיסטריה כיוון שהייתה זו הפרעה שנראתה כהפרעה נוירולוגית, אך לא צייתה לחוקי הנוירולוגיה. כך למשל, פצינטיות התלוננו על "שיתוק כפפה". תופעה בה כף היד, והיא בלבד, משותקת. תופעה זו אינה אפשרית מבחינה נוירולוגית. שארקו ניסה להוכיח כי היסטריה היא תופעה שיש להסבירה על רקע פסיכולוגי, וכי ניתן להבחין בינה לבין הפרעות נוירולוגיות כמו אפילפסיה, שיתוק, עוורון וכו'. לצורך עבודתו הוא נהג להכניס את החולה לטרנס היפנוטי, ובו ציווה עליה להזיז את ידה, לראות בעיניה וכו'. אם פציינטית סבלה משיתוק והיפנוזה הסירה את השיתוק, המסקנה היא שהגורם לכך חייב להיות רגשי, קרי: היסטריה. אם השיתוק לא הוסר יש לאבחן הפרעה נוירולוגית. שרקו הרחיב את עבודתו לגברים והראה ששיתוק כתוצאה מטראומה אצל גברים דומה לשיתוק כתוצאה מהיסטריה אצל נשים. אחת המשמעויות המרתקות של ניסויים אלו הייתה שבנפש חייב להיות חלק לא מודע. החולות של שארקו התעוררו מההיפנוזה ולמשך זמן מה יכלו להזיז את ידן, אך לא היה להן מושג מדוע. המסקנה היא שחייב להיות חלק לא מודע בנפש שיצר את העוורון ושהושפע מההוראה של שארקו.</p>
+<p dir="rtl">ההשפעה המשמעותית השניה על פרויד הייתה המודלים הפיזיקליים ששלטו באותה התקופה. פרויד ראה במיינד "מכשיר" שאחד מתפקידו המרכזים הוא לטפל באנרגיה נפשית, וליתר דיוק – לפרוק אנרגיה נפשית עודפת. המיינד, והאנרגיה הנפשית שבו, פועלים על-פי חוקים פיזיקליים כמו חוק שימור האנרגיה (אנרגיה לא הולכת לאיבוד, היא רק משנה צורה) וחוק ההתמדה (המערכת שואפת לשמור על רמה קבועה של אנרגיה, המכונה הומאוסטזיס). האנרגיה יכולה להיאגר בנפש ולהשתחרר ממנה. כאשר רמת האנרגיה עולה מעל לרמה הקבועה נוצר חוסר איזון במערכת ובעקבותיו לחץ לשחררה כדי לשוב למצב הקבוע. רגשות ואפקטים הם היצוגים החוויתיים של האנרגיה הנפשית, וכאשר מצטברים במיינד רגשות ואפקטים שליליים הוא פועל לשחרר את האנרגיה הקשורה בהם.</p>
+<p dir="rtl">אנסה להדגים את הרעיון המכניסטי של פרויד במונחים הקרובים יותר לחוויה האנושית. נניח שכלבי האהוב נדרס. ודאי ארגיש דאגה ועצב, ואכעס על הנהג הדורס. יתכן שאצעק עליו. אחר-כך אולי אבכה, ולאחר שאחזור מהוטרינר אדבר על האירוע עם בני משפחתי. הכעס, הפעולות למען הכלב והדיבור – כולם מהווים דרכים לפורקן, ובסוף היום אחוש הקלת מה. עבור פרויד העוררות הרגשית היא עליה ניכרת ברמת האנרגיה, ועליה זו נחווית כלא נעימה. הפעולות שעשיתי פרקו חלק מהאנרגיה העודפת, והוקל לי. פרויד דימה את הרגשות למאגרים או בריכות המחפשים שיחרור, וכשהם משתחררים הם שוטפים החוצה והאדם מוצא הקלה.</p>
+<p dir="rtl">במקרים אחרים קשה יותר לפרוק את האנרגיה. נמשיך בדוגמה שלנו. נניח שלא זר דרס את כלבי, אלא אני. רגשותיי קשים פי כמה. נניח גם שאני חש שאם אספר לבני משפחתי את שקרה הם יכעסו מאוד, ואני חושש מכך. במקרה כזה אחוש אשם, אכעס על עצמי ורגשות אלו יישארו כלואים בתוכי ויענו את נפשי.</p>
+<p dir="rtl">דרך נוספת בה רגשות קשים מוצאים מרגוע היא על-ידי קישורם לחוויות אחרות ומנוגדות. לאחר שאלך לוטרינר ואעשה כל שביכולתי כדי לעזור לכלבי אחוש בוודאי שאינני אדם נורא כל-כך והדבר יקל בוודאי על תחושותי הקשות.</p>
+<p dir="rtl">פרויד טען שכאשר הרעיונות והאנרגיה הקשורה בהם לא ניתנים לפורקן ומתחילים להחוות כמאיימים או ככאלו שעלולים למוטט את האני ניתן לטפל בהם בעזרת מנגנון פסיכולוגי מיוחד (הגנה) שפועל כדי להגן על המודע על-ידי יצירת ניתוק של הזכרון והרגש מהמודע והרחקתו ללא מודע.</p>
+<p dir="rtl">ההגנה המרכזית היא הדחקה, קרי: הרחקה של רעיון לא מקובל והרגש הקשור אליו לחלקים הלא מודעים של המכשיר הנפשי. אם ההדחקה מצליחה לא נותר שום זכר מודע לרעיון המציק ולרגשות שכרוכים בו. עתה האדם אינו מוטרד עוד מהאירוע הקשה ומהרגשות שעורר. הוא שכח אותם. יחד עם זאת, הזיכרון ממשיך לחיות בלא מודע, מבודד ממהלך המחשבות הרגיל ועמו האנרגיה הרגשית הקשורה אליו. הזיכרון החבוי בלא מודע אינו חשוף לתהליכי השחיקה הנורמליים הפועלים במודע, הוא לא יכול להתפרק בדיבור או במעשה ולא יכול להקשר לחוויות אחרות, ולכן הוא שומר על כוחו וחיוניותו לאורך זמן רב מאוד. האנרגיה הרגשית הקשורה אליו חייבת למצוא מפלט כלשהו, ומכיוון שהיא לא יכולה להפרק בדרכים רגילות היא עושה זאת בדרכים עקיפות, וזיכרון האירוע נחיה מחדש בדרכים אחרות וכך נוצר הסימפטום. כדי לפרוק את האנרגיה הקשורה באירוע שהודחק האגו משתמש בהגנות נוספות. המרה&nbsp;(substitution)&nbsp;היא הגנה בה רגש מסוים מועבר מרעיון בלתי נסבל לכזה שהמודע יכול לקבלו. פרויד מדגים זאת בסיפור על נערה שגערה בעצמה על דברים שידעה שאין בהם כל הגיון- שגנבה או שזייפה כספים וכו'. במקור היא גערה בעצמה על שאוננה בחשאי. הרגשות של גערה עצמית ואשמה יכלו לקבל ביטוי בהקשר של מחשבות כפיתיות אבסורדיות שהחליפו את זיכרון האוננות. הגנה אחרת היא התמרה של אפקט, בה אפקט אחד מוחלף באחר. כאן פרויד מכוון למקום בו חרדה מופיעה במקום רגש אחר שהודחק.</p>
+<p dir="rtl">לסיכום, פרויד סבר שהמיינד יודע לטאטא את מכאוביו מתחת לשטיח. להבדיל מלכלוך, מכאובי הנפש לא נרגעים לאחר טיאטואם. הם רוגשים וסוערים ומחפשים דרכים חלופיות לביטוי – וכך נוצרים הסימפטומים ההיסטריים.</p>
+<p dir="rtl">במסגרת המודל האקונומי פרויד מתאר לראשונה את מבנה "המכשיר הנפשי" – הארגון הפסיכולוגי בו מתרחשים תהליכים פסיכולוגיים. הוא ימשיך לעסוק בנושא לאורך כל הקריירה שלו וישכלל את המודל שלו שוב ושוב. בהקשר זה פרויד מדבר לראשונה על האגו-האני. במודל מוקדם זה האני מזוהה עם המודע ועם היכולת להפעיל הגנות. הוא מתפתח על בסיס האינטראקציה בין הצרכים הביולוגיים לבין העולם החיצוני. האני מורכב מהחוויה המודעת של האדם את עצמו, מהיכולת לשלוט ברגשות ולפרוק אותם, מהיכולת לטוות זיכרונות וקשרים בין זיכרונות ומהיכולת לפצל רעיונות וזיכרונות שאינם מתיישבים עם החלק המודע של המיינד, ולהפנותם ללא מודע.</p>
+<p>&nbsp;</p>
+<p dir="rtl"><b>הטכניקה הטיפולית במודל האקונומי היא אבריאקציה, בה מתאפשר זכרון של האירוע וביטוי מלא של האפקט החסום</b>. זכרון האירוע הפתוגני חוזר ומתחבר לזרם התודעה המרכזי ומתאפשר פורקן של האנרגיה הקשורה בו – והסימפטום נעלם. יש צורך לאפשר זיכרון מפורט של האירוע ובתימלול האפקט – כך שהוא יקבל שחרור במילים ומשקל האפקט החסום ירד מעל לפציינט.</p>
+<h2 dir="rtl">אחרית דבר</h2>
+<p dir="rtl" align="justify">בסיפור המקרה כותב ברוייר כי לאחר שאנה החלימה מכל הסימפטומים היא נסעה מחוץ לוינה כדי להשלים את החלמתה, אך האמת שונה. במכתב שכתב פרויד לסטפן צוויג ב- 1932, הוא ציין כי בערבו של היום בו הצליח לרפא את אחרון הסימפטומים שלה הגיע ברוייר לביתה של אנה ומצא אותה מבולבלת ומתפתלת מכאבי בטן. כשנשאלה מה קרה ענתה – "הנה בא ילדו של ד"ר ברוייר". ברוייר נמלט באימה והשאיר את אנה לטיפולו של רופא אחר. פרויד כתב על כך כי "באותו רגע אחז ברוייר בידו את המפתח, אולם מאחר שלא היה מסוגל או לא רצה להשתמש בו, שמט אותו".</p>
+<p dir="rtl" align="justify">פרויד כיוון לכך שמחלתה של אנה או. לא הסתכמה רק בסימפטומים היסטריים שהתגלו כהמרה רגשות מודחקים התעוררו עקב טראומות מוגדרות ולא הייתה רק תגובה לסביבה מחניקה אלא היה להם גם אספקט מיני מובהק. ההריון ההיסטרי שאנה פיתחה היה תגובת העברה בה המשיכה המקורית שלה לאביה הועברה לברוייר. לעבודה על העברה זו יכול היה להיות יכול היה להיות אפקט טיפולי חשוב. פרויד עתיד למקם את המיניות בליבה של התיאוריה שלו, וברוייר, כבן תקופתו הסתייג מכך עמוקות.</p>
+<p dir="rtl" align="justify">פרויד פעל וכתב במשך ארבעים שנה לערך וכתביו מתפרסים על פני עשרים וארבעה כרכים. במהלך שנות עבודתו שינה את דעותיו ושכלל את חשיבתו כמה פעמים. גם תיאורית האישיות שלו התפתחה והשתנתה. לאחר המודל האקונומי שתואר במאמר זה הגיעו המודל הטופוגרפי והמודל הסטרקטורלי. הרעיון לפיו בבסיס הסימפטום יש אנרגיה חסומה לא יעזוב אותו גם בהמשך, אך הוא ישכלל את המודל ויטען שהאגו מפעיל הגנות שנועדו לדחוק ללא מודע רעיונות שאינם קבילים על החברה ועל הסופר אגו. מטרת הטיפול אינה רק לשחרר את האנרגיה אלא להעלות את התוכן המודחק למודע ולעבדו כך שתתאפשר אינטגרציה שלו לאגו.</p>
+<p dir="rtl">בהתאם תשתנה גם הטכניקה הטיפולית. את ההיפנוזה יחליפו האסוציאציות החופשיות. אנה פרויד כתבה: "בטכניקה של ההיפנוזה, בתקופה שקדמה לאנליזה, עדיין היה תפקידו של האני שלילי לגמרי. תכליתו של המהפנט הייתה להגיע אל תוכנו של הלא מודע, והאני לא היה בעיניו אלא גורם מפריע בעבודתו… וההיפנוזה – דרך להיפטר ממנו לזמן מה. בשעה שעלה חומר לא מודע בהיפנוזה, היה הרופא מכניס אותו לתוך האני. פעולה זו, הכנסת החומר הזה – בזרוע ממש – לתוך התודעה, הייתה מסלקת את התסמין. אבל האני לא השתתף בתהליך הריפוי. הוא התייחס אל הפולש בסבלנות כל זמן שהוא גופו נתון להשפעת הרופא שהפנט אותו. אחר כך היה מתקומם ופותח במאבק חדש, כדי להתגונן מפני יסוד הסתם הכפוי עליו, וכך פג הריפוי…".</p>
+<p dir="rtl">גם היחס לגורם המרפא השתנה. הקטרזיס – השיחרור של אנרגיה רגשית חסומה פינה את מקומו לאינסייט – תובנה. פסיכואנליטיקאים קלאסיים מאוחרים לפרויד, כמו פניקל וגרינסון נתנו לקטרזיס תפקיד צדדי יחסית. בעניהם הקטרזיס מראה לפצינט את המציאות והעוצמה של התחושות שלהם, וכך מהווה דרך אחת מתוך כמה לשכנע אותו במציאות של התהליכים הלא מודעים שלהם. כאשר להבנה הקוגנטיבית נלווה רגש עז הסיכוי שהפציינט יקבל את האינסייט גדול יותר.</p>
+<p dir="rtl">באופן מעט אירוני הרעיון של פרויד לפיו נוירוזה נובעת מאירועים טראומטיים מודחקים וכי ניתן לרפאה על-ידי זכירה וביטוי של האפקט שנלווה לאירוע במקור, זחו לתחיה דווקא אצל מטפלים מגישות של “emotive therapies", שפותחו במקור כזרם המתנגד לפסיכואנליזה.</p>
+<p dir="rtl">החלוץ, והמנהיג האינטלקטואלי של תירפיות הקטרזיס המודרניות היה וילהלם רייך. רייך לא הדגיש קטרזיס כאירוע יחיד, אלא כדבר המתרחש באופן ממושך לאורך הטיפול. עבורו המטרה לא הייתה לעקוף את ההגנות באירוע משחרר יחיד, אלא למוססן באיטיות כך שהן לא תחזורנה ותתיצבנה במהירות במקומן.</p>
+<p dir="rtl">מטפלים מאוחרים יותר מרייך נטו להפשטה מסוימת של רעיונותיו וכך נולד המיתוס ההומניסטי לפיו עצם ההתמסרות לרגשות והקבלה הפאסיבית של דחפים לכשעצמה מוליכה לריפוי. עם הזמן התפתחה הבנה מקבילה לזו של פרויד – שגם אם השחרור מסימפטומים יכול להיות מהיר – הרי שחזרתם יכולה להיות מהירה לא פחות אם אין שינוי עמוק יותר. מנחי קבוצות לטיפול אמוטיבי מצאו לצערם שהמשתתפים בקבוצות שלהם הופכים למעין מכורים לריגוש המחפשים מרתון אחר מרתון. כך, בלא להיות מגובה באסטרטגיות חיים אינטגרטיביות יותר, לשחרור הרגשי הייתה השפעה זמנית, ונוצר צורך להעלות את מינונו על-ידי טכניקות יותר ויותר עוצמתיות. לבסוף, המוקד הופנה יותר ויותר לדפוסי החיים היוצרים את ההפרעות.</p>
+</div>
+
+			
+			
+
+			
+			
+		</article>
+
+			
+</div></section>
+					
+										<section id="innerbottom" class="grid-block"><div class="grid-box width100 grid-h"><div class="module mod-box mod-box-color1 mod-box-colored widget_black_studio_tinymce deepest" style="min-height: 0px;">
+
+		<h3 class="module-title"><span class="icon icon-download"></span>צרו קשר</h3>	<div class="textwidget"><p>
+                </p><div class="gf_browser_chrome gform_wrapper gform_legacy_markup_wrapper gform-theme--no-framework gplaceholder_wrapper style_wrapper box_wrapper" data-form-theme="legacy" data-form-index="0" id="gform_wrapper_2"><div id="gf_2" class="gform_anchor" tabindex="-1"></div><form method="post" enctype="multipart/form-data" target="gform_ajax_frame_2" id="gform_2" class="gplaceholder  style box" action="/articles/freud/#gf_2" data-formid="2" novalidate="">
+                        <div class="gform-body gform_body"><ul id="gform_fields_2" class="gform_fields top_label form_sublabel_below description_below validation_below"><li id="field_2_5" class="gfield gfield--type-honeypot gform_validation_container field_sublabel_below gfield--has-description field_description_below field_validation_below gfield_visibility_visible"><label class="gfield_label gform-field-label" for="input_2_5" style="display: none;">Email</label><div class="ginput_container"><input name="input_5" id="input_2_5" type="text" value="" autocomplete="new-password" placeholder="Email"></div><div class="gfield_description" id="gfield_description_2_5">שדה זה מיועד למטרות אימות ויש להשאיר אותו ללא שינוי.</div></li><li id="field_2_3" class="gfield gfield--type-text gfield_contains_required field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"><label class="gfield_label gform-field-label" for="input_2_3" style="display: none;">שם<span class="gfield_required"><span class="gfield_required gfield_required_asterisk">*</span></span></label><div class="ginput_container ginput_container_text"><input name="input_3" id="input_2_3" type="text" value="" class="large" aria-required="true" aria-invalid="false" placeholder="שם *"></div></li><li id="field_2_2" class="gfield gfield--type-text gfield_contains_required field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"><label class="gfield_label gform-field-label" for="input_2_2" style="display: none;">טלפון<span class="gfield_required"><span class="gfield_required gfield_required_asterisk">*</span></span></label><div class="ginput_container ginput_container_text"><input name="input_2" id="input_2_2" type="text" value="" class="large" aria-required="true" aria-invalid="false" placeholder="טלפון *"></div></li><li id="field_2_4" class="gfield gfield--type-textarea field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"><label class="gfield_label gform-field-label" for="input_2_4" style="display: none;">הערות</label><div class="ginput_container ginput_container_textarea"><textarea name="input_4" id="input_2_4" class="textarea medium" aria-invalid="false" rows="10" cols="50" placeholder="הערות"></textarea></div></li></ul></div>
+        <div class="gform-footer gform_footer top_label"> <input type="submit" id="gform_submit_button_2" class="gform_button button" onclick="gform.submission.handleButtonClick(this);" data-submission-type="submit" value="שליחה »" placeholder=""> <input type="hidden" name="gform_ajax" value="form_id=2&amp;title=&amp;description=&amp;tabindex=0&amp;theme=legacy&amp;styles=[]&amp;hash=40d854f57ea459218132499e24ce6454">
+            <input type="hidden" class="gform_hidden" name="gform_submission_method" data-js="gform_submission_method_2" value="iframe">
+            <input type="hidden" class="gform_hidden" name="gform_theme" data-js="gform_theme_2" id="gform_theme_2" value="legacy">
+            <input type="hidden" class="gform_hidden" name="gform_style_settings" data-js="gform_style_settings_2" id="gform_style_settings_2" value="[]">
+            <input type="hidden" class="gform_hidden" name="is_submit_2" value="1">
+            <input type="hidden" class="gform_hidden" name="gform_submit" value="2">
+            
+            <input type="hidden" class="gform_hidden" name="gform_unique_id" value="">
+            <input type="hidden" class="gform_hidden" name="state_2" value="WyJbXSIsIjZmZGJkY2VmNDMzODBhODhlYzRlNDdmYjZmOGVhZjhiIl0=">
+            <input type="hidden" autocomplete="off" class="gform_hidden" name="gform_target_page_number_2" id="gform_target_page_number_2" value="0">
+            <input type="hidden" autocomplete="off" class="gform_hidden" name="gform_source_page_number_2" id="gform_source_page_number_2" value="1">
+            <input type="hidden" name="gform_field_values" value="">
+            
+        </div>
+                        </form>
+                        </div><span id="gform_visibility_test_2"></span>
+		                <iframe style="display:none;width:0px;height:0px;" src="about:blank" name="gform_ajax_frame_2" id="gform_ajax_frame_2" title="Iframe זה מכיל את התנאי הנדרש לטיפול ב-Gravity Forms באמצעות Ajax."></iframe>
+		                <script type="text/javascript">
+/* <![CDATA[ */
+ gform.initializeOnLoaded( function() {gformInitSpinner( 2, 'https://mypsy.co.il/wp-content/plugins/gravityforms/images/spinner.svg', true );jQuery('#gform_ajax_frame_2').on('load',function(){var contents = jQuery(this).contents().find('*').html();var is_postback = contents.indexOf('GF_AJAX_POSTBACK') >= 0;if(!is_postback){return;}var form_content = jQuery(this).contents().find('#gform_wrapper_2');var is_confirmation = jQuery(this).contents().find('#gform_confirmation_wrapper_2').length > 0;var is_redirect = contents.indexOf('gformRedirect(){') >= 0;var is_form = form_content.length > 0 && ! is_redirect && ! is_confirmation;var mt = parseInt(jQuery('html').css('margin-top'), 10) + parseInt(jQuery('body').css('margin-top'), 10) + 100;if(is_form){jQuery('#gform_wrapper_2').html(form_content.html());if(form_content.hasClass('gform_validation_error')){jQuery('#gform_wrapper_2').addClass('gform_validation_error');} else {jQuery('#gform_wrapper_2').removeClass('gform_validation_error');}setTimeout( function() { /* delay the scroll by 50 milliseconds to fix a bug in chrome */ jQuery(document).scrollTop(jQuery('#gform_wrapper_2').offset().top - mt); }, 50 );if(window['gformInitDatepicker']) {gformInitDatepicker();}if(window['gformInitPriceFields']) {gformInitPriceFields();}var current_page = jQuery('#gform_source_page_number_2').val();gformInitSpinner( 2, 'https://mypsy.co.il/wp-content/plugins/gravityforms/images/spinner.svg', true );jQuery(document).trigger('gform_page_loaded', [2, current_page]);window['gf_submitting_2'] = false;}else if(!is_redirect){var confirmation_content = jQuery(this).contents().find('.GF_AJAX_POSTBACK').html();if(!confirmation_content){confirmation_content = contents;}jQuery('#gform_wrapper_2').replaceWith(confirmation_content);jQuery(document).scrollTop(jQuery('#gf_2').offset().top - mt);jQuery(document).trigger('gform_confirmation_loaded', [2]);window['gf_submitting_2'] = false;wp.a11y.speak(jQuery('#gform_confirmation_message_2').text());}else{jQuery('#gform_2').append(contents);if(window['gformRedirect']) {gformRedirect();}}jQuery(document).trigger("gform_pre_post_render", [{ formId: "2", currentPage: "current_page", abort: function() { this.preventDefault(); } }]);        if (event && event.defaultPrevented) {                return;        }        const gformWrapperDiv = document.getElementById( "gform_wrapper_2" );        if ( gformWrapperDiv ) {            const visibilitySpan = document.createElement( "span" );            visibilitySpan.id = "gform_visibility_test_2";            gformWrapperDiv.insertAdjacentElement( "afterend", visibilitySpan );        }        const visibilityTestDiv = document.getElementById( "gform_visibility_test_2" );        let postRenderFired = false;        function triggerPostRender() {            if ( postRenderFired ) {                return;            }            postRenderFired = true;            gform.core.triggerPostRenderEvents( 2, current_page );            if ( visibilityTestDiv ) {                visibilityTestDiv.parentNode.removeChild( visibilityTestDiv );            }        }        function debounce( func, wait, immediate ) {            var timeout;            return function() {                var context = this, args = arguments;                var later = function() {                    timeout = null;                    if ( !immediate ) func.apply( context, args );                };                var callNow = immediate && !timeout;                clearTimeout( timeout );                timeout = setTimeout( later, wait );                if ( callNow ) func.apply( context, args );            };        }        const debouncedTriggerPostRender = debounce( function() {            triggerPostRender();        }, 200 );        if ( visibilityTestDiv && visibilityTestDiv.offsetParent === null ) {            const observer = new MutationObserver( ( mutations ) => {                mutations.forEach( ( mutation ) => {                    if ( mutation.type === 'attributes' && visibilityTestDiv.offsetParent !== null ) {                        debouncedTriggerPostRender();                        observer.disconnect();                    }                });            });            observer.observe( document.body, {                attributes: true,                childList: false,                subtree: true,                attributeFilter: [ 'style', 'class' ],            });        } else {            triggerPostRender();        }    } );} ); 
+/* ]]> */
+</script>
+<p></p></div>		
+</div></div></section>
+					
+				</div>
+				
+				
+								
+				
+			</div>
+			
+			
+
+		</div>
+	</div>
+	
+	
+	
+	
+		<div id="block-footer" class="bg-white">
+		<div class="block-footer wrapper ">
+		
+			<footer id="footer">
+
+				
+				<div class="module widget_text  deepest">
+
+			<center>
+<div style="margin-top:45px;">
+<a class="wcopy" href="http://www.wisy.co.il" target="_blank" rel="nofollow">Wisy - שיווק באינטרנט</a>
+</div>
+</center>		
+</div>
+			</footer>
+			
+
+		</div>
+	</div>
+		
+
+
+<script type="speculationrules">
+{"prefetch":[{"source":"document","where":{"and":[{"href_matches":"\/*"},{"not":{"href_matches":["\/wp-*.php","\/wp-admin\/*","\/wp-content\/uploads\/*","\/wp-content\/*","\/wp-content\/plugins\/*","\/wp-content\/themes\/yoo_infinite_wp\/*","\/*\\?(.+)"]}},{"not":{"selector_matches":"a[rel~=\"nofollow\"]"}},{"not":{"selector_matches":".no-prefetch, .no-prefetch a"}}]},"eagerness":"conservative"}]}
+</script>
+<link rel="stylesheet" id="gforms_reset_css-css" href="https://mypsy.co.il/wp-content/plugins/gravityforms/legacy/css/formreset.min.css?ver=2.9.23" type="text/css" media="all">
+<link rel="stylesheet" id="gforms_formsmain_css-css" href="https://mypsy.co.il/wp-content/plugins/gravityforms/legacy/css/formsmain.min.css?ver=2.9.23" type="text/css" media="all">
+<link rel="stylesheet" id="gforms_ready_class_css-css" href="https://mypsy.co.il/wp-content/plugins/gravityforms/legacy/css/readyclass.min.css?ver=2.9.23" type="text/css" media="all">
+<link rel="stylesheet" id="gforms_browsers_css-css" href="https://mypsy.co.il/wp-content/plugins/gravityforms/legacy/css/browsers.min.css?ver=2.9.23" type="text/css" media="all">
+<link rel="stylesheet" id="gforms_rtl_css-css" href="https://mypsy.co.il/wp-content/plugins/gravityforms/legacy/css/rtl.min.css?ver=2.9.23" type="text/css" media="all">
+<script type="text/javascript" src="https://mypsy.co.il/wp-includes/js/dist/dom-ready.min.js?ver=f77871ff7694fffea381" id="wp-dom-ready-js"></script>
+<script type="text/javascript" src="https://mypsy.co.il/wp-includes/js/dist/hooks.min.js?ver=4d63a3d491d11ffd8ac6" id="wp-hooks-js"></script>
+<script type="text/javascript" src="https://mypsy.co.il/wp-includes/js/dist/i18n.min.js?ver=5e580eb46a90c2b997e6" id="wp-i18n-js"></script>
+<script type="text/javascript" id="wp-i18n-js-after">
+/* <![CDATA[ */
+wp.i18n.setLocaleData( { 'text direction\u0004ltr': [ 'rtl' ] } );
+/* ]]> */
+</script>
+<script type="text/javascript" id="wp-a11y-js-translations">
+/* <![CDATA[ */
+( function( domain, translations ) {
+	var localeData = translations.locale_data[ domain ] || translations.locale_data.messages;
+	localeData[""].domain = domain;
+	wp.i18n.setLocaleData( localeData, domain );
+} )( "default", {"translation-revision-date":"2023-05-28 22:06:16+0000","generator":"GlotPress\/4.0.1","domain":"messages","locale_data":{"messages":{"":{"domain":"messages","plural-forms":"nplurals=2; plural=n != 1;","lang":"he_IL"},"Notifications":["\u05d4\u05ea\u05e8\u05d0\u05d5\u05ea"]}},"comment":{"reference":"wp-includes\/js\/dist\/a11y.js"}} );
+/* ]]> */
+</script>
+<script type="text/javascript" src="https://mypsy.co.il/wp-includes/js/dist/a11y.min.js?ver=3156534cc54473497e14" id="wp-a11y-js"></script>
+<script type="text/javascript" defer="defer" src="https://mypsy.co.il/wp-content/plugins/gravityforms/js/jquery.json.min.js?ver=2.9.23" id="gform_json-js"></script>
+<script type="text/javascript" id="gform_gravityforms-js-extra">
+/* <![CDATA[ */
+var gform_i18n = {"datepicker":{"days":{"monday":"Mo","tuesday":"Tu","wednesday":"We","thursday":"Th","friday":"Fr","saturday":"Sa","sunday":"Su"},"months":{"january":"\u05d9\u05e0\u05d5\u05d0\u05e8","february":"\u05e4\u05d1\u05e8\u05d5\u05d0\u05e8","march":"\u05de\u05e8\u05e5","april":"\u05d0\u05e4\u05e8\u05d9\u05dc","may":"\u05de\u05d0\u05d9","june":"\u05d9\u05d5\u05e0\u05d9","july":"\u05d9\u05d5\u05dc\u05d9","august":"\u05d0\u05d5\u05d2\u05d5\u05e1\u05d8","september":"\u05e1\u05e4\u05d8\u05de\u05d1\u05e8","october":"\u05d0\u05d5\u05e7\u05d8\u05d5\u05d1\u05e8","november":"\u05e0\u05d5\u05d1\u05de\u05d1\u05e8","december":"\u05d3\u05e6\u05de\u05d1\u05e8"},"firstDay":1,"iconText":"Select date"}};
+var gf_legacy_multi = [];
+var gform_gravityforms = {"strings":{"invalid_file_extension":"\u05e1\u05d5\u05d2 \u05d6\u05d4 \u05e9\u05dc \u05e7\u05d5\u05d1\u05e5 \u05d0\u05e1\u05d5\u05e8. \u05d7\u05d9\u05d9\u05d1 \u05dc\u05d4\u05d9\u05d5\u05ea \u05d0\u05d7\u05d3 \u05de\u05d4\u05d1\u05d0\u05d9\u05dd:","delete_file":"\u05de\u05d7\u05e7 \u05e7\u05d5\u05d1\u05e5 \u05d6\u05d4","in_progress":"\u05d1\u05ea\u05d4\u05dc\u05d9\u05da","file_exceeds_limit":"\u05d4\u05e7\u05d5\u05d1\u05e5 \u05d7\u05d5\u05e8\u05d2 \u05de\u05de\u05d2\u05d1\u05dc\u05ea \u05d4\u05d2\u05d5\u05d3\u05dc","illegal_extension":"\u05e1\u05d5\u05d2 \u05d6\u05d4 \u05e9\u05dc \u05e7\u05d5\u05d1\u05e5 \u05d0\u05e1\u05d5\u05e8.","max_reached":"\u05d4\u05d2\u05e2\u05ea \u05dc\u05de\u05e1\u05e4\u05e8 \u05d4\u05e7\u05d1\u05e6\u05d9\u05dd \u05d4\u05de\u05e8\u05d1\u05d9","unknown_error":"\u05d0\u05d9\u05e8\u05e2\u05d4 \u05d1\u05e2\u05d9\u05d4 \u05d1\u05e9\u05de\u05d9\u05e8\u05ea \u05d4\u05e7\u05d5\u05d1\u05e5 \u05d1\u05e9\u05e8\u05ea","currently_uploading":"\u05e0\u05d0 \u05dc\u05d4\u05de\u05ea\u05d9\u05df \u05dc\u05e1\u05d9\u05d5\u05dd \u05d4\u05d4\u05e2\u05dc\u05d0\u05d4","cancel":"\u05d1\u05d9\u05d8\u05d5\u05dc","cancel_upload":"\u05d1\u05d8\u05dc \u05d4\u05e2\u05dc\u05d0\u05ea \u05e7\u05d5\u05d1\u05e5","cancelled":"\u05d1\u05d5\u05d8\u05dc","error":"\u05e9\u05d2\u05d9\u05d0\u05d4","message":"\u05d4\u05d5\u05d3\u05e2\u05d4"},"vars":{"images_url":"https:\/\/mypsy.co.il\/wp-content\/plugins\/gravityforms\/images"}};
+var gf_global = {"gf_currency_config":{"name":"\u05d3\u05d5\u05dc\u05e8 \u05d0\u05de\u05e8\u05d9\u05e7\u05d0\u05d9","symbol_left":"$","symbol_right":"","symbol_padding":"","thousand_separator":",","decimal_separator":".","decimals":2,"code":"USD"},"base_url":"https:\/\/mypsy.co.il\/wp-content\/plugins\/gravityforms","number_formats":[],"spinnerUrl":"https:\/\/mypsy.co.il\/wp-content\/plugins\/gravityforms\/images\/spinner.svg","version_hash":"17dc3748d8be80d49b699aba362f3f8b","strings":{"newRowAdded":"\u05e0\u05d5\u05e1\u05e4\u05d4 \u05e9\u05d5\u05e8\u05d4 \u05d7\u05d3\u05e9\u05d4.","rowRemoved":"\u05e9\u05d5\u05e8\u05d4 \u05d4\u05d5\u05e1\u05e8\u05d4","formSaved":"\u05d4\u05d8\u05d5\u05e4\u05e1 \u05e0\u05e9\u05de\u05e8. \u05d4\u05ea\u05d5\u05db\u05df \u05de\u05db\u05d9\u05dc \u05d0\u05ea \u05d4\u05e7\u05d9\u05e9\u05d5\u05e8 \u05dc\u05d7\u05d6\u05e8\u05d4 \u05d5\u05de\u05d9\u05dc\u05d5\u05d9 \u05d4\u05d8\u05d5\u05e4\u05e1."}};
+/* ]]> */
+</script>
+<script type="text/javascript" defer="defer" src="https://mypsy.co.il/wp-content/plugins/gravityforms/js/gravityforms.min.js?ver=2.9.23" id="gform_gravityforms-js"></script>
+<script type="text/javascript" defer="defer" src="https://mypsy.co.il/wp-content/plugins/gravityforms/assets/js/dist/utils.min.js?ver=380b7a5ec0757c78876bc8a59488f2f3" id="gform_gravityforms_utils-js"></script>
+<script type="text/javascript" defer="defer" src="https://mypsy.co.il/wp-content/plugins/gravityforms/assets/js/dist/vendor-theme.min.js?ver=8673c9a2ff188de55f9073009ba56f5e" id="gform_gravityforms_theme_vendors-js"></script>
+<script type="text/javascript" id="gform_gravityforms_theme-js-extra">
+/* <![CDATA[ */
+var gform_theme_config = {"common":{"form":{"honeypot":{"version_hash":"17dc3748d8be80d49b699aba362f3f8b"},"ajax":{"ajaxurl":"https:\/\/mypsy.co.il\/wp-admin\/admin-ajax.php","ajax_submission_nonce":"449ee4e0c0","i18n":{"step_announcement":"Step %1$s of %2$s, %3$s","unknown_error":"There was an unknown error processing your request. Please try again."}}}},"hmr_dev":"","public_path":"https:\/\/mypsy.co.il\/wp-content\/plugins\/gravityforms\/assets\/js\/dist\/","config_nonce":"d04ab54078"};
+/* ]]> */
+</script>
+<script type="text/javascript" defer="defer" src="https://mypsy.co.il/wp-content/plugins/gravityforms/assets/js/dist/scripts-theme.min.js?ver=96b168b3a480baf99058dabf9338533b" id="gform_gravityforms_theme-js"></script>
+<script type="text/javascript">
+/* <![CDATA[ */
+ gform.initializeOnLoaded( function() { jQuery(document).on('gform_post_render', function(event, formId, currentPage){if(formId == 2) {} } );jQuery(document).on('gform_post_conditional_logic', function(event, formId, fields, isInit){} ) } ); 
+/* ]]> */
+</script>
+<script type="text/javascript">
+/* <![CDATA[ */
+ gform.initializeOnLoaded( function() {jQuery(document).trigger("gform_pre_post_render", [{ formId: "2", currentPage: "1", abort: function() { this.preventDefault(); } }]);        if (event && event.defaultPrevented) {                return;        }        const gformWrapperDiv = document.getElementById( "gform_wrapper_2" );        if ( gformWrapperDiv ) {            const visibilitySpan = document.createElement( "span" );            visibilitySpan.id = "gform_visibility_test_2";            gformWrapperDiv.insertAdjacentElement( "afterend", visibilitySpan );        }        const visibilityTestDiv = document.getElementById( "gform_visibility_test_2" );        let postRenderFired = false;        function triggerPostRender() {            if ( postRenderFired ) {                return;            }            postRenderFired = true;            gform.core.triggerPostRenderEvents( 2, 1 );            if ( visibilityTestDiv ) {                visibilityTestDiv.parentNode.removeChild( visibilityTestDiv );            }        }        function debounce( func, wait, immediate ) {            var timeout;            return function() {                var context = this, args = arguments;                var later = function() {                    timeout = null;                    if ( !immediate ) func.apply( context, args );                };                var callNow = immediate && !timeout;                clearTimeout( timeout );                timeout = setTimeout( later, wait );                if ( callNow ) func.apply( context, args );            };        }        const debouncedTriggerPostRender = debounce( function() {            triggerPostRender();        }, 200 );        if ( visibilityTestDiv && visibilityTestDiv.offsetParent === null ) {            const observer = new MutationObserver( ( mutations ) => {                mutations.forEach( ( mutation ) => {                    if ( mutation.type === 'attributes' && visibilityTestDiv.offsetParent !== null ) {                        debouncedTriggerPostRender();                        observer.disconnect();                    }                });            });            observer.observe( document.body, {                attributes: true,                childList: false,                subtree: true,                attributeFilter: [ 'style', 'class' ],            });        } else {            triggerPostRender();        }    } ); 
+/* ]]> */
+</script>
+<style>
+#block-header {
+background: #5a7431 url('http://www.mypsy.co.il/wp-content/themes/yoo_infinite_wp/images/menu-2px.png') 0 repeat-x !important;
+}
+#footer {
+margin-top: 15px;
+}
+</style><center>
+<div style="margin-top:15px;">
+<a class="wcopy" target="_blank" href="https://plus.google.com/106954762837127900885/about" rel="me">Google+</a>
+</div>
+</center>
+
+
+
+<script defer="" src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015" integrity="sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ==" data-cf-beacon="{&quot;version&quot;:&quot;2024.11.0&quot;,&quot;token&quot;:&quot;9944526787264704a9171de8acf2ba91&quot;,&quot;r&quot;:1,&quot;server_timing&quot;:{&quot;name&quot;:{&quot;cfCacheStatus&quot;:true,&quot;cfEdge&quot;:true,&quot;cfExtPri&quot;:true,&quot;cfL4&quot;:true,&quot;cfOrigin&quot;:true,&quot;cfSpeedBrain&quot;:true},&quot;location_startswith&quot;:null}}" crossorigin="anonymous"></script>
+
+
+
+
+
+<p id="a11y-speak-intro-text" class="a11y-speak-intro-text" style="position: absolute;margin: -1px;padding: 0;height: 1px;width: 1px;overflow: hidden;clip: rect(1px, 1px, 1px, 1px);-webkit-clip-path: inset(50%);clip-path: inset(50%);border: 0;word-wrap: normal !important;" hidden="hidden">התראות</p><div id="a11y-speak-assertive" class="a11y-speak-region" style="position: absolute;margin: -1px;padding: 0;height: 1px;width: 1px;overflow: hidden;clip: rect(1px, 1px, 1px, 1px);-webkit-clip-path: inset(50%);clip-path: inset(50%);border: 0;word-wrap: normal !important;" aria-live="assertive" aria-relevant="additions text" aria-atomic="true"></div><div id="a11y-speak-polite" class="a11y-speak-region" style="position: absolute;margin: -1px;padding: 0;height: 1px;width: 1px;overflow: hidden;clip: rect(1px, 1px, 1px, 1px);-webkit-clip-path: inset(50%);clip-path: inset(50%);border: 0;word-wrap: normal !important;" aria-live="polite" aria-relevant="additions text" aria-atomic="true"></div></body></html></div>
+    <script src="/script.js"></script>
+    <script id="zappy-mobile-submenu-script">
+    (function() {
+      function initMobileSubmenuToggles() {
+        if (window.innerWidth > 768) { document.querySelectorAll('.mobile-submenu-toggle').forEach(function(b){b.remove();}); document.querySelectorAll('.sub-menu.mobile-expanded').forEach(function(m){m.classList.remove('mobile-expanded');}); return; }
+        document.querySelectorAll('.nav-menu li:has(.sub-menu), nav li:has(.sub-menu), .navbar li:has(.sub-menu), #navMenu li:has(.sub-menu)').forEach(function(li) {
+          if (li.querySelector('.mobile-submenu-toggle')) return;
+          var sm = li.querySelector('.sub-menu'), pl = li.querySelector(':scope > a');
+          if (!sm || !pl) return;
+          var tb = document.createElement('button'); tb.className = 'mobile-submenu-toggle'; tb.setAttribute('aria-label', 'Toggle submenu'); tb.setAttribute('type', 'button');
+          pl.insertAdjacentElement('afterend', tb);
+          tb.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation();
+            document.querySelectorAll('.sub-menu.mobile-expanded').forEach(function(m) { if (m !== sm) { m.classList.remove('mobile-expanded'); var t = m.parentElement.querySelector('.mobile-submenu-toggle'); if(t) t.classList.remove('expanded'); }});
+            sm.classList.toggle('mobile-expanded'); tb.classList.toggle('expanded');
+          });
+        });
+      }
+      if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', initMobileSubmenuToggles); } else { initMobileSubmenuToggles(); }
+      window.addEventListener('resize', function() { clearTimeout(window._mrt); window._mrt = setTimeout(initMobileSubmenuToggles, 250); });
+    })();
+    </script>
+</body>
+</html>

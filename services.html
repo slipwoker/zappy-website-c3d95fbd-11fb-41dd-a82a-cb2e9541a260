@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>אופס...</title>
+    <meta name="description" content="">
+    <meta name="keywords" content="">
+    
+    <!-- Zappy Analytics -->
+<script>
+(function() {
+  'use strict';
+  
+  // Configuration
+  var config = {
+    websiteId: 'c3d95fbd-11fb-41dd-a82a-cb2e9541a260',
+    apiUrl: 'http://localhost:5001/api/analytics/track',
+    sessionDuration: 30 * 60 * 1000, // 30 minutes
+    visitorDuration: 30 * 24 * 60 * 60 * 1000, // 30 days
+    trackPageViews: true,
+    trackClicks: true,
+    trackFormSubmissions: true
+  };
+  
+  // Generate or retrieve persistent visitor ID (30 days)
+  function getVisitorId() {
+    var visitorKey = 'zappy_visitor_' + config.websiteId;
+    var visitor = null;
+    
+    try {
+      visitor = localStorage.getItem(visitorKey);
+      if (visitor) {
+        var visitorData = JSON.parse(visitor);
+        var now = Date.now();
+        
+        // Check if visitor ID is still valid (30 days)
+        if (now - visitorData.created < config.visitorDuration) {
+          // Update last seen timestamp
+          visitorData.lastSeen = now;
+          localStorage.setItem(visitorKey, JSON.stringify(visitorData));
+          return visitorData.id;
+        }
+      }
+    } catch (e) {
+      console.warn('Zappy Analytics: LocalStorage not available');
+    }
+    
+    // Generate new visitor ID
+    var newVisitorId = 'zv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    try {
+      localStorage.setItem(visitorKey, JSON.stringify({
+        id: newVisitorId,
+        created: Date.now(),
+        lastSeen: Date.now()
+      }));
+    } catch (e) {
+      // Continue without local storage
+    }
+    
+    return newVisitorId;
+  }
+  
+  // Generate or retrieve session ID (30 minutes)
+  function getSessionId() {
+    var sessionKey = 'zappy_session_' + config.websiteId;
+    var session = null;
+    
+    try {
+      session = sessionStorage.getItem(sessionKey);
+      if (session) {
+        var sessionData = JSON.parse(session);
+        var now = Date.now();
+        
+        // Check if session is still valid
+        if (now - sessionData.timestamp < config.sessionDuration) {
+          // Update timestamp
+          sessionData.timestamp = now;
+          sessionStorage.setItem(sessionKey, JSON.stringify(sessionData));
+          return sessionData.id;
+        }
+      }
+    } catch (e) {
+      console.warn('Zappy Analytics: SessionStorage not available');
+    }
+    
+    // Generate new session ID
+    var newSessionId = 'zs_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    try {
+      sessionStorage.setItem(sessionKey, JSON.stringify({
+        id: newSessionId,
+        timestamp: Date.now()
+      }));
+    } catch (e) {
+      // Continue without session storage
+    }
+    
+    return newSessionId;
+  }
+  
+  var visitorId = getVisitorId();
+  var sessionId = getSessionId();
+  
+  // Track an event
+  function trackEvent(eventType, data) {
+    data = data || {};
+    
+    var eventData = {
+      website_id: config.websiteId,
+      event_type: eventType,
+      page_path: window.location.pathname,
+      referrer: document.referrer || 'direct',
+      visitor_id: visitorId,
+      session_id: sessionId,
+      metadata: data
+    };
+    
+    // Use sendBeacon if available (better for page unload events)
+    if (navigator.sendBeacon) {
+      var blob = new Blob([JSON.stringify(eventData)], { type: 'application/json' });
+      navigator.sendBeacon(config.apiUrl, blob);
+    } else {
+      // Fallback to fetch
+      fetch(config.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(eventData),
+        keepalive: true
+      }).catch(function(error) {
+        console.warn('Zappy Analytics: Failed to track event', error);
+      });
+    }
+  }
+  
+  // Track page view
+  if (config.trackPageViews) {
+    trackEvent('pageview', {
+      title: document.title,
+      url: window.location.href
+    });
+  }
+  
+  // Track clicks on important elements
+  if (config.trackClicks) {
+    document.addEventListener('click', function(e) {
+      var target = e.target;
+      
+      // Track button clicks (counted as actions)
+      if (target.tagName === 'BUTTON' || target.closest('button')) {
+        var button = target.tagName === 'BUTTON' ? target : target.closest('button');
+        trackEvent('click', {
+          element: 'button',
+          text: button.textContent.trim().substring(0, 100),
+          id: button.id || null,
+          class: button.className || null
+        });
+      }
+      
+      // Track link clicks (navigation - not counted as actions)
+      else if (target.tagName === 'A' || target.closest('a')) {
+        var link = target.tagName === 'A' ? target : target.closest('a');
+        trackEvent('navigation', {
+          element: 'link',
+          text: link.textContent.trim().substring(0, 100),
+          href: link.href,
+          external: link.hostname !== window.location.hostname
+        });
+      }
+    }, true);
+  }
+  
+  // Track form submissions
+  if (config.trackFormSubmissions) {
+    document.addEventListener('submit', function(e) {
+      var form = e.target;
+      
+      trackEvent('form_submit', {
+        form_id: form.id || null,
+        form_name: form.name || null,
+        form_action: form.action || null,
+        form_method: form.method || 'GET'
+      });
+    }, true);
+  }
+  
+  // Track time on page (send on page unload)
+  var pageLoadTime = Date.now();
+  
+  window.addEventListener('beforeunload', function() {
+    var timeOnPage = Math.floor((Date.now() - pageLoadTime) / 1000); // in seconds
+    
+    trackEvent('page_unload', {
+      time_on_page: timeOnPage,
+      page_path: window.location.pathname
+    });
+  });
+  
+  // Expose tracking function globally for custom events
+  window.zappyAnalytics = {
+    track: trackEvent,
+    getVisitorId: function() { return visitorId; },
+    getSessionId: function() { return sessionId; }
+  };
+  
+})();
+</script>
+<!-- End Zappy Analytics -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="/styles.css">
+    <style id="zappy-mobile-submenu-styles">
+      @media (max-width: 768px) {
+        .nav-menu .sub-menu, nav .sub-menu, .navbar .sub-menu, #navMenu .sub-menu { position: static !important; transform: none !important; box-shadow: none !important; background: transparent !important; max-height: 0; overflow: hidden; opacity: 0; visibility: hidden; transition: max-height 0.3s ease, opacity 0.3s ease; padding: 0 !important; }
+        .sub-menu.mobile-expanded { max-height: 500px !important; opacity: 1 !important; visibility: visible !important; padding: 8px 0 8px 16px !important; }
+        [dir="rtl"] .sub-menu.mobile-expanded, html[lang="he"] .sub-menu.mobile-expanded { padding: 8px 16px 8px 0 !important; }
+        .nav-menu li:hover > .sub-menu, nav li:hover > .sub-menu, .navbar li:hover > .sub-menu, #navMenu li:hover > .sub-menu { opacity: 0; visibility: hidden; }
+        .nav-menu li > .sub-menu.mobile-expanded, nav li > .sub-menu.mobile-expanded, .navbar li > .sub-menu.mobile-expanded, #navMenu li > .sub-menu.mobile-expanded { opacity: 1 !important; visibility: visible !important; pointer-events: auto !important; }
+        .nav-menu li:has(.sub-menu), nav li:has(.sub-menu), .navbar li:has(.sub-menu), #navMenu li:has(.sub-menu) { display: flex !important; flex-wrap: wrap !important; align-items: center !important; }
+        .nav-menu li:has(.sub-menu) > a, nav li:has(.sub-menu) > a, .navbar li:has(.sub-menu) > a, #navMenu li:has(.sub-menu) > a { flex: 1 !important; }
+        .mobile-submenu-toggle { display: flex !important; align-items: center !important; justify-content: center !important; width: 44px !important; height: 44px !important; background: transparent !important; border: none !important; cursor: pointer !important; }
+        .mobile-submenu-toggle::after { content: '' !important; display: block !important; width: 0 !important; height: 0 !important; border-left: 6px solid transparent !important; border-right: 6px solid transparent !important; border-top: 7px solid currentColor !important; transition: transform 0.3s ease !important; }
+        .mobile-submenu-toggle.expanded::after { transform: rotate(180deg) !important; }
+        .nav-menu li:has(.sub-menu) > .sub-menu, nav li:has(.sub-menu) > .sub-menu, .navbar li:has(.sub-menu) > .sub-menu, #navMenu li:has(.sub-menu) > .sub-menu { flex-basis: 100% !important; width: 100% !important; }
+        .sub-menu a { padding: 10px 0 !important; display: block !important; }
+      }
+      @media (min-width: 769px) { .mobile-submenu-toggle { display: none !important; } }
+    </style>
+</head>
+<body>
+<div dir="rtl" class="zappy-rtl-wrapper" style="direction: rtl; text-align: right;"><html><head></head><body><div id="headed"><center>
+<a href="/" title="עוזי כרמי"><div style="width:450px;height:250px;position: absolute;" id="bigme"></div></a>
+<img src="/assets/dd5296a9-5b1a-41ec-a5ea-95bb0da29c39.jpg" alt="עוזי כרמי"></center>
+</div>
+
+<div id="LogoText2" style="display:none;">לקביעת פגישת היכרות&nbsp; <span id="phoneme"> התקשרו <a href="tel:054-5757040">054-5757040</a></span></div>
+
+
+		
+	<div id="block-header">
+		<div class="block-header wrapper ">
+				
+			<header id="header" class="clearfix">
+							<div id="banner"><div class="textwidget"><div id="LogoText">לקביעת פגישת היכרות&nbsp; <span id="phoneme">
+<br>
+ התקשרו: <a href="tel:054-5757040">054-5757040</a></span></div></div></div>
+								
+				
+								<div id="menubar">
+					
+										<nav id="menu"><ul class="menu menu-dropdown"><li class="level1 item674"><a href="/" class="level1"><span>פסיכולוג קליני</span></a></li><li class="level1 item673"><a href="/background" class="level1"><span>רקע והכשרה</span></a></li><li class="level1 item685"><a href="/psychology" class="level1"><span>מה זה טיפול פסיכולוגי ?</span></a></li><li class="level1 item813"><a href="/difficulties" class="level1"><span>קשיים שונים</span></a></li><li class="level1 item698"><a href="/faq" class="level1"><span>שאלות ותשובות</span></a></li><li class="level1 item721"><a href="/articles" class="level1"><span>מאמרים</span></a></li><li class="level1 item723"><a href="/contact" class="level1"><span>צור קשר</span></a></li></ul></nav>
+					
+										
+				</div>
+				
+				
+
+
+			</header>
+
+		</div>
+
+	</div>
+		<div id="header2"><h1 class="title">אופס…</h1></div>
+	
+	
+	
+					
+				
+	<div id="block-main" class="bg-white">	
+		<div class="block-main wrapper ">
+			
+			<div id="main" class="grid-block" style="display: flex !important; flex-wrap: wrap !important; gap: 30px !important;">
+
+				<div id="maininner" class="grid-box" style="min-height: 115px;; flex: 1 1 auto !important; min-width: 0 !important">
+					<section id="innertop" class="grid-block">
+					
+					
+					</section>
+					
+					
+										<section id="content" class="grid-block"><div id="system">
+
+					
+		<article class="item">
+		<div id="sidebart">
+					</div>
+		
+			
+			<div class="content clearfix"><p>העמוד שחיפשתם לא נמצא.<br>
+בחזרה ל<a href="/">עמוד הבית.</a></p>
+</div>
+
+			<p class="edit"><a class="post-edit-link" href="https://mypsy.co.il/wp-admin/post.php" target="_blank" rel="noopener noreferrer">Edit this post.</a></p>	
+		</article>
+		
+				
+	
+</div></section>
+					
+										<section id="innerbottom" class="grid-block"><div class="grid-box width100 grid-h"><div class="module mod-box mod-box-color1 mod-box-colored widget_black_studio_tinymce deepest" style="min-height: 0px;">
+
+		<h3 class="module-title"><span class="icon icon-download"></span>צרו קשר</h3>	<div class="textwidget"><p>
+                </p><div class="gf_browser_chrome gform_wrapper gplaceholder  style box_wrapper" id="gform_wrapper_2"><a id="gf_2" name="gf_2" class="gform_anchor"></a><form method="post" enctype="multipart/form-data" target="gform_ajax_frame_2" id="gform_2" class="gplaceholder  style box" action="/404error/#gf_2">
+                        <div class="gform_body">
+                            <ul id="gform_fields_2" class="gform_fields top_label description_below"><li id="field_2_3" class="gfield               gfield_contains_required"><label class="gfield_label" for="input_2_3" style="display: none;">שם<span class="gfield_required">*</span></label><div class="ginput_container"><input name="input_3" id="input_2_3" type="text" value="" class="large" tabindex="1" placeholder="שם *"></div></li><li id="field_2_2" class="gfield               gfield_contains_required"><label class="gfield_label" for="input_2_2" style="display: none;">טלפון<span class="gfield_required">*</span></label><div class="ginput_container"><input name="input_2" id="input_2_2" type="text" value="" class="large" tabindex="2" placeholder="טלפון *"></div></li><li id="field_2_4" class="gfield"><label class="gfield_label" for="input_2_4" style="display: none;">הערות</label><div class="ginput_container"><textarea name="input_4" id="input_2_4" class="textarea medium" tabindex="3" rows="10" cols="50" placeholder="הערות"></textarea></div></li><li id="field_2_5" class="gfield    gform_validation_container"><label class="gfield_label" for="input_2_5" style="display: none;">Name</label><div class="ginput_container"><input name="input_5" id="input_2_5" type="text" value="" placeholder="Name"></div><div class="gfield_description">This field is for validation purposes and should be left unchanged.</div></li>
+                            </ul></div>
+        <div class="gform_footer top_label"> <input type="submit" id="gform_submit_button_2" class="gform_button button" value="שליחה »" tabindex="4" onclick="if(window[&quot;gf_submitting_2&quot;]){return false;}  window[&quot;gf_submitting_2&quot;]=true; " placeholder=""><input type="hidden" name="gform_ajax" value="form_id=2&amp;title=&amp;description=&amp;tabindex=1">
+            <input type="hidden" class="gform_hidden" name="is_submit_2" value="1">
+            <input type="hidden" class="gform_hidden" name="gform_submit" value="2">
+            <input type="hidden" class="gform_hidden" name="gform_unique_id" value="">
+            <input type="hidden" class="gform_hidden" name="state_2" value="WyJbXSIsIjFkYTY1NzliMTRjM2NmZjI1Yzk1MTVjMTA3NDE1MWZkIl0=">
+            <input type="hidden" class="gform_hidden" name="gform_target_page_number_2" id="gform_target_page_number_2" value="0">
+            <input type="hidden" class="gform_hidden" name="gform_source_page_number_2" id="gform_source_page_number_2" value="1">
+            <input type="hidden" name="gform_field_values" value="">
+            
+        </div>
+                        </form>
+                        </div>
+                <iframe style="display:none;width:0px;height:0px;" src="about:blank" name="gform_ajax_frame_2" id="gform_ajax_frame_2"></iframe>
+                <script type="text/javascript">jQuery(document).ready(function($){gformInitSpinner( 2, 'http://www.mypsy.co.il/wp-content/plugins/gravityforms/images/spinner.gif' );jQuery('#gform_ajax_frame_2').load( function(){var contents = jQuery(this).contents().find('*').html();var is_postback = contents.indexOf('GF_AJAX_POSTBACK') >= 0;if(!is_postback){return;}var form_content = jQuery(this).contents().find('#gform_wrapper_2');var is_redirect = contents.indexOf('gformRedirect(){') >= 0;var is_form = !(form_content.length <= 0 || is_redirect);if(is_form){jQuery('#gform_wrapper_2').html(form_content.html());jQuery(document).scrollTop(jQuery('#gform_wrapper_2').offset().top);if(window['gformInitDatepicker']) {gformInitDatepicker();}if(window['gformInitPriceFields']) {gformInitPriceFields();}var current_page = jQuery('#gform_source_page_number_2').val();gformInitSpinner( 2, 'http://www.mypsy.co.il/wp-content/plugins/gravityforms/images/spinner.gif' );jQuery(document).trigger('gform_page_loaded', [2, current_page]);window['gf_submitting_2'] = false;}else if(!is_redirect){var confirmation_content = jQuery(this).contents().find('#gforms_confirmation_message').html();if(!confirmation_content){confirmation_content = contents;}setTimeout(function(){jQuery('#gform_wrapper_2').replaceWith('<' + 'div id=\'gforms_confirmation_message\' class=\'gform_confirmation_message_2\'' + '>' + confirmation_content + '<' + '/div' + '>');jQuery(document).scrollTop(jQuery('#gforms_confirmation_message').offset().top);jQuery(document).trigger('gform_confirmation_loaded', [2]);window['gf_submitting_2'] = false;}, 50);}else{jQuery('#gform_2').append(contents);if(window['gformRedirect']) {gformRedirect();}}jQuery(document).trigger('gform_post_render', [2, current_page]);} );} );</script><script type="text/javascript"> jQuery(document).ready(function(){jQuery(document).trigger('gform_post_render', [2, 1]) } ); </script><p></p></div>		
+</div></div></section>
+					
+				</div>
+				
+				
+								
+				
+			</div>
+			
+			
+
+		</div>
+	</div>
+	
+	
+	
+	
+		<div id="block-footer" class="bg-white">
+		<div class="block-footer wrapper ">
+		
+			<footer id="footer">
+
+				
+				<div class="module widget_text  deepest">
+
+			<center>
+<div style="margin-top:45px;">
+<a class="wcopy" href="http://www.wisy.co.il" target="_blank">Wisy - שיווק באינטרנט</a>
+</div>
+</center>		
+</div>
+			</footer>
+			
+
+		</div>
+	</div>
+		
+
+
+<link rel="stylesheet" id="gforms_reset_css-css" href="https://www.mypsy.co.il/wp-content/plugins/gravityforms/css/formreset.css?ver=1.8.20" type="text/css" media="all">
+<link rel="stylesheet" id="gforms_formsmain_css-css" href="https://www.mypsy.co.il/wp-content/plugins/gravityforms/css/formsmain.css?ver=1.8.20" type="text/css" media="all">
+<link rel="stylesheet" id="gforms_ready_class_css-css" href="https://www.mypsy.co.il/wp-content/plugins/gravityforms/css/readyclass.css?ver=1.8.20" type="text/css" media="all">
+<link rel="stylesheet" id="gforms_browsers_css-css" href="https://www.mypsy.co.il/wp-content/plugins/gravityforms/css/browsers.css?ver=1.8.20" type="text/css" media="all">
+<link rel="stylesheet" id="gforms_rtl_css-css" href="https://www.mypsy.co.il/wp-content/plugins/gravityforms/css/rtl.css?ver=1.8.20" type="text/css" media="all">
+<script type="text/javascript" src="https://www.mypsy.co.il/wp-includes/js/admin-bar.min.js"></script>
+<script type="text/javascript" src="https://www.mypsy.co.il/wp-content/plugins/gravityforms/js/jquery.json-1.3.js?ver=1.8.20"></script>
+<script type="text/javascript" src="https://www.mypsy.co.il/wp-content/plugins/gravityforms/js/jquery.placeholders.2.1.1.min.js?ver=1.8.20"></script>
+<script type="text/javascript" src="https://www.mypsy.co.il/wp-content/plugins/gravityforms/js/gravityforms.js?ver=1.8.20"></script>
+	<script type="text/javascript">
+		(function() {
+			var request, b = document.body, c = 'className', cs = 'customize-support', rcs = new RegExp('(^|\\s+)(no-)?'+cs+'(\\s+|$)');
+
+			request = true;
+
+			b[c] = b[c].replace( rcs, ' ' );
+			b[c] += ( window.postMessage && request ? ' ' : ' no-' ) + cs;
+		}());
+	</script>
+			<div id="wpadminbar" class="" role="navigation">
+			<a class="screen-reader-shortcut" href="#wp-toolbar" tabindex="1">מעבר לסרגל הכלים</a>
+			<div class="quicklinks" id="wp-toolbar" role="navigation" aria-label="סרגל ניווט עליון." tabindex="0">
+				<ul id="wp-admin-bar-root-default" class="ab-top-menu">
+		<li id="wp-admin-bar-wp-logo" class="menupop"><a class="ab-item" aria-haspopup="true" href="https://mypsy.co.il/wp-admin/about.php" title="אודות וורדפרס" target="_blank" rel="noopener noreferrer"><span class="ab-icon"></span></a><div class="ab-sub-wrapper"><ul id="wp-admin-bar-wp-logo-default" class="ab-submenu">
+		<li id="wp-admin-bar-about"><a class="ab-item" href="https://mypsy.co.il/wp-admin/about.php" target="_blank" rel="noopener noreferrer">אודות וורדפרס</a>		</li></ul><ul id="wp-admin-bar-wp-logo-external" class="ab-sub-secondary ab-submenu">
+		<li id="wp-admin-bar-wporg"><a class="ab-item" href="https://he.wordpress.org/">WordPress.org</a>		</li>
+		<li id="wp-admin-bar-documentation"><a class="ab-item" href="http://codex.wordpress.org/">תיעוד</a>		</li>
+		<li id="wp-admin-bar-support-forums"><a class="ab-item" href="https://wordpress.org/support/">פורום תמיכה</a>		</li>
+		<li id="wp-admin-bar-feedback"><a class="ab-item" href="https://wordpress.org/support/forum/requests-and-feedback">משוב</a>		</li></ul></div>		</li>
+		<li id="wp-admin-bar-site-name" class="menupop"><a class="ab-item" aria-haspopup="true" href="https://mypsy.co.il/wp-admin/" target="_blank" rel="noopener noreferrer">עוזי כרמי</a><div class="ab-sub-wrapper"><ul id="wp-admin-bar-site-name-default" class="ab-submenu">
+		<li id="wp-admin-bar-dashboard"><a class="ab-item" href="https://mypsy.co.il/wp-admin/" target="_blank" rel="noopener noreferrer">לוח בקרה</a>		</li></ul><ul id="wp-admin-bar-appearance" class="ab-submenu">
+		<li id="wp-admin-bar-themes"><a class="ab-item" href="https://mypsy.co.il/wp-admin/themes.php" target="_blank" rel="noopener noreferrer">ערכות עיצוב</a>		</li>
+		<li id="wp-admin-bar-customize" class="hide-if-no-customize"><a class="ab-item" href="https://mypsy.co.il/wp-admin/customize.php" target="_blank" rel="noopener noreferrer">התאמה אישית</a>		</li>
+		<li id="wp-admin-bar-widgets"><a class="ab-item" href="https://mypsy.co.il/wp-admin/widgets.php" target="_blank" rel="noopener noreferrer">וידג'טים</a>		</li>
+		<li id="wp-admin-bar-menus"><a class="ab-item" href="https://mypsy.co.il/wp-admin/nav-menus.php" target="_blank" rel="noopener noreferrer">תפריטים</a>		</li></ul></div>		</li>
+		<li id="wp-admin-bar-updates"><a class="ab-item" href="https://mypsy.co.il/wp-admin/update-core.php" title="3 שדרוג תוספים, 1 שדרוג ערכות עיצוב" target="_blank" rel="noopener noreferrer"><span class="ab-icon"></span><span class="ab-label">4</span><span class="screen-reader-text">3 שדרוג תוספים, 1 שדרוג ערכות עיצוב</span></a>		</li>
+		<li id="wp-admin-bar-comments"><a class="ab-item" href="https://mypsy.co.il/wp-admin/edit-comments.php" title="0 תגובות ממתינות לאישור" target="_blank" rel="noopener noreferrer"><span class="ab-icon"></span><span id="ab-awaiting-mod" class="ab-label awaiting-mod pending-count count-0">0</span></a>		</li>
+		<li id="wp-admin-bar-new-content" class="menupop"><a class="ab-item" aria-haspopup="true" href="https://mypsy.co.il/wp-admin/post-new.php" title="חדש" target="_blank" rel="noopener noreferrer"><span class="ab-icon"></span><span class="ab-label">חדש</span></a><div class="ab-sub-wrapper"><ul id="wp-admin-bar-new-content-default" class="ab-submenu">
+		<li id="wp-admin-bar-new-post"><a class="ab-item" href="https://mypsy.co.il/wp-admin/post-new.php" target="_blank" rel="noopener noreferrer">פוסט</a>		</li>
+		<li id="wp-admin-bar-new-media"><a class="ab-item" href="https://mypsy.co.il/wp-admin/media-new.php" target="_blank" rel="noopener noreferrer">מדיה</a>		</li>
+		<li id="wp-admin-bar-new-link"><a class="ab-item" href="https://mypsy.co.il/wp-admin/link-add.php" target="_blank" rel="noopener noreferrer">קישור</a>		</li>
+		<li id="wp-admin-bar-new-page"><a class="ab-item" href="https://mypsy.co.il/wp-admin/post-new.php" target="_blank" rel="noopener noreferrer">עמוד</a>		</li>
+		<li id="wp-admin-bar-new-user"><a class="ab-item" href="https://mypsy.co.il/wp-admin/user-new.php" target="_blank" rel="noopener noreferrer">משתמש</a>		</li></ul></div>		</li>
+		<li id="wp-admin-bar-edit"><a class="ab-item" href="https://mypsy.co.il/wp-admin/post.php" target="_blank" rel="noopener noreferrer">עריכה</a>		</li>
+		<li id="wp-admin-bar-wpseo-menu" class="menupop"><a class="ab-item" aria-haspopup="true" href="https://mypsy.co.il/wp-admin/post.php" target="_blank" rel="noopener noreferrer">SEO<div title="N/A" class="wpseo-score-icon na 0"></div></a><div class="ab-sub-wrapper"><ul id="wp-admin-bar-wpseo-menu-default" class="ab-submenu">
+		<li id="wp-admin-bar-wpseo-kwresearch" class="menupop"><div class="ab-item ab-empty-item" aria-haspopup="true">מחקר מילות מפתח</div><div class="ab-sub-wrapper"><ul id="wp-admin-bar-wpseo-kwresearch-default" class="ab-submenu">
+		<li id="wp-admin-bar-wpseo-adwordsexternal"><a class="ab-item" href="https://adwords.google.com/keywordplanner" target="_blank">AdWords ללא התחברות עם חשבון Gmail</a>		</li>
+		<li id="wp-admin-bar-wpseo-googleinsights"><a class="ab-item" href="https://www.google.com/insights/search/#q=&amp;cmpt=q" target="_blank">Google Insights</a>		</li>
+		<li id="wp-admin-bar-wpseo-wordtracker"><a class="ab-item" href="http://tools.seobook.com/keyword-tools/seobook/?keyword=" target="_blank">SEO Book</a>		</li></ul></div>		</li>
+		<li id="wp-admin-bar-wpseo-analysis" class="menupop"><div class="ab-item ab-empty-item" aria-haspopup="true">בצע אנליזה לעמוד זה</div><div class="ab-sub-wrapper"><ul id="wp-admin-bar-wpseo-analysis-default" class="ab-submenu">
+		<li id="wp-admin-bar-wpseo-inlinks-ose"><a class="ab-item" href="//moz.com/researchtools/ose/links?site=http%3A%2F%2Fwww.mypsy.co.il%2F404error%2F" target="_blank">בדוק קישורים נכנסים (OSE)</a>		</li>
+		<li id="wp-admin-bar-wpseo-kwdensity"><a class="ab-item" href="//www.zippy.co.uk/keyworddensity/index.php?url=http%3A%2F%2Fwww.mypsy.co.il%2F404error%2F&amp;keyword=" target="_blank">בדוק צפיפות מילות מפתח</a>		</li>
+		<li id="wp-admin-bar-wpseo-cache"><a class="ab-item" href="//webcache.googleusercontent.com/search?strip=1&amp;q=cache:http%3A%2F%2Fwww.mypsy.co.il%2F404error%2F" target="_blank">בדוק זיכרון מטמון של גוגל</a>		</li>
+		<li id="wp-admin-bar-wpseo-header"><a class="ab-item" href="//quixapp.com/headers/?r=http%3A%2F%2Fwww.mypsy.co.il%2F404error%2F" target="_blank">בדוק כותרת עליונה</a>		</li>
+		<li id="wp-admin-bar-wpseo-richsnippets"><a class="ab-item" href="//www.google.com/webmasters/tools/richsnippets?q=http%3A%2F%2Fwww.mypsy.co.il%2F404error%2F" target="_blank">Check Rich Snippets</a>		</li>
+		<li id="wp-admin-bar-wpseo-facebookdebug"><a class="ab-item" href="//developers.facebook.com/tools/debug/og/object?q=http%3A%2F%2Fwww.mypsy.co.il%2F404error%2F" target="_blank">Facebook Debugger</a>		</li>
+		<li id="wp-admin-bar-wpseo-pinterestvalidator"><a class="ab-item" href="//developers.pinterest.com/rich_pins/validator/?link=http%3A%2F%2Fwww.mypsy.co.il%2F404error%2F" target="_blank">Pinterest Rich Pins Validator</a>		</li>
+		<li id="wp-admin-bar-wpseo-htmlvalidation"><a class="ab-item" href="//validator.w3.org/check?uri=http%3A%2F%2Fwww.mypsy.co.il%2F404error%2F" target="_blank">HTML Validator</a>		</li>
+		<li id="wp-admin-bar-wpseo-cssvalidation"><a class="ab-item" href="//jigsaw.w3.org/css-validator/validator?uri=http%3A%2F%2Fwww.mypsy.co.il%2F404error%2F" target="_blank">CSS Validator</a>		</li>
+		<li id="wp-admin-bar-wpseo-pagespeed"><a class="ab-item" href="//developers.google.com/speed/pagespeed/insights/?url=http%3A%2F%2Fwww.mypsy.co.il%2F404error%2F" target="_blank">Google Page Speed Test</a>		</li>
+		<li id="wp-admin-bar-wpseo-modernie"><a class="ab-item" href="//www.modern.ie/en-us/report#http%3A%2F%2Fwww.mypsy.co.il%2F404error%2F" target="_blank">Modern IE Site Scan</a>		</li></ul></div>		</li>
+		<li id="wp-admin-bar-wpseo-settings" class="menupop"><a class="ab-item" aria-haspopup="true" href="https://mypsy.co.il/wp-admin/admin.php" target="_blank" rel="noopener noreferrer">הגדרות SEO</a><div class="ab-sub-wrapper"><ul id="wp-admin-bar-wpseo-settings-default" class="ab-submenu">
+		<li id="wp-admin-bar-wpseo-titles"><a class="ab-item" href="https://mypsy.co.il/wp-admin/admin.php" target="_blank" rel="noopener noreferrer">כותרות ותגיות מטא</a>		</li>
+		<li id="wp-admin-bar-wpseo-social"><a class="ab-item" href="https://mypsy.co.il/wp-admin/admin.php" target="_blank" rel="noopener noreferrer">חברתי</a>		</li>
+		<li id="wp-admin-bar-wpseo-xml"><a class="ab-item" href="https://mypsy.co.il/wp-admin/admin.php" target="_blank" rel="noopener noreferrer">מפת XML</a>		</li>
+		<li id="wp-admin-bar-wpseo-permalinks"><a class="ab-item" href="https://mypsy.co.il/wp-admin/admin.php" target="_blank" rel="noopener noreferrer">קישורים קבועים</a>		</li>
+		<li id="wp-admin-bar-wpseo-internal-links"><a class="ab-item" href="https://mypsy.co.il/wp-admin/admin.php" target="_blank" rel="noopener noreferrer">קישורים פנימיים</a>		</li>
+		<li id="wp-admin-bar-wpseo-rss"><a class="ab-item" href="https://mypsy.co.il/wp-admin/admin.php" target="_blank" rel="noopener noreferrer">RSS</a>		</li>
+		<li id="wp-admin-bar-wpseo-import"><a class="ab-item" href="https://mypsy.co.il/wp-admin/admin.php" target="_blank" rel="noopener noreferrer">יבוא ויצוא</a>		</li>
+		<li id="wp-admin-bar-wpseo_bulk-editor"><a class="ab-item" href="https://mypsy.co.il/wp-admin/admin.php" target="_blank" rel="noopener noreferrer">עריכה קבוצתית</a>		</li>
+		<li id="wp-admin-bar-wpseo-files"><a class="ab-item" href="https://mypsy.co.il/wp-admin/admin.php" target="_blank" rel="noopener noreferrer">עריכת קבצים</a>		</li>
+		<li id="wp-admin-bar-wpseo-licenses"><a class="ab-item" href="https://mypsy.co.il/wp-admin/admin.php" target="_blank" rel="noopener noreferrer">הרחבות</a>		</li></ul></div>		</li></ul></div>		</li>
+		<li id="wp-admin-bar-wp-rocket" class="menupop"><a class="ab-item" aria-haspopup="true" href="https://mypsy.co.il/wp-admin/options-general.php" target="_blank" rel="noopener noreferrer">WP Rocket</a><div class="ab-sub-wrapper"><ul id="wp-admin-bar-wp-rocket-default" class="ab-submenu">
+		<li id="wp-admin-bar-rocket-settings"><a class="ab-item" href="https://mypsy.co.il/wp-admin/options-general.php" target="_blank" rel="noopener noreferrer">הגדרות</a>		</li>
+		<li id="wp-admin-bar-purge-all"><a class="ab-item" href="https://mypsy.co.il/wp-admin/admin-post.php" target="_blank" rel="noopener noreferrer">נקה זיכרון מטמון</a>		</li>
+		<li id="wp-admin-bar-purge-url"><a class="ab-item" href="https://mypsy.co.il/wp-admin/admin-post.php" target="_blank" rel="noopener noreferrer">מחק URL זה</a>		</li>
+		
+		<li id="wp-admin-bar-support"><a class="ab-item" href="http://wp-rocket.me/support/">תמיכה</a>		</li></ul></div>		</li></ul><ul id="wp-admin-bar-top-secondary" class="ab-top-secondary ab-top-menu">
+		<li id="wp-admin-bar-search" class="admin-bar-search"><div class="ab-item ab-empty-item" tabindex="-1"><form action="http://www.mypsy.co.il/" method="get" id="adminbarsearch"><input class="adminbar-input" name="s" id="adminbar-search" type="text" value="" maxlength="150"><input type="submit" class="adminbar-button" value="חיפוש"></form></div>		</li>
+		<li id="wp-admin-bar-my-account" class="menupop with-avatar"><a class="ab-item" aria-haspopup="true" href="https://mypsy.co.il/wp-admin/profile.php" title="החשבון שלי" target="_blank" rel="noopener noreferrer">שלום wisy<img alt="" src="http://0.gravatar.com/assets/71877b94-a09e-495e-83fc-2c442ce43b0d.png?s=26&amp;d=http%3A%2F%2F0.gravatar.com%2Favatar%2Fad516503a11cd5ca435acc9bb6523536%3Fs%3D26&amp;r=G" class="avatar avatar-26 photo" height="26" width="26" style="position: absolute; position: absolute"></a><div class="ab-sub-wrapper"><ul id="wp-admin-bar-user-actions" class="ab-submenu">
+		<li id="wp-admin-bar-user-info"><a class="ab-item" tabindex="-1" href="https://mypsy.co.il/wp-admin/profile.php" target="_blank" rel="noopener noreferrer"><img alt="" src="http://0.gravatar.com/assets/71877b94-a09e-495e-83fc-2c442ce43b0d.png?s=64&amp;d=http%3A%2F%2F0.gravatar.com%2Favatar%2Fad516503a11cd5ca435acc9bb6523536%3Fs%3D64&amp;r=G" class="avatar avatar-64 photo" height="64" width="64" style="position: absolute; position: absolute; position: absolute"><span class="display-name">wisy</span></a>		</li>
+		<li id="wp-admin-bar-edit-profile"><a class="ab-item" href="https://mypsy.co.il/wp-admin/profile.php" target="_blank" rel="noopener noreferrer">פרופיל אישי</a>		</li>
+		<li id="wp-admin-bar-logout"><a class="ab-item" href="https://mypsy.co.il/wp-login.php" target="_blank" rel="noopener noreferrer">יציאה</a>		</li></ul></div>		</li></ul>			</div>
+						<a class="screen-reader-shortcut" href="https://mypsy.co.il/wp-login.php" target="_blank" rel="noopener noreferrer">יציאה</a>
+					</div>
+
+		<style>
+#block-header {
+background: #5a7431 url('http://www.mypsy.co.il/wp-content/themes/yoo_infinite_wp/images/menu-2px.png') 0 repeat-x !important;
+}
+#footer {
+margin-top: 15px;
+}
+</style><center>
+<div style="margin-top:15px;">
+<a class="wcopy" target="_blank" href="https://plus.google.com/106954762837127900885/about" rel="me">Google+</a>
+</div>
+</center>
+
+
+
+
+
+
+<script id="hiddenlpsubmitdiv" style="display: none;"></script><script>try{for(var lastpass_iter=0; lastpass_iter < document.forms.length; lastpass_iter++){ var lastpass_f = document.forms[lastpass_iter]; if(typeof(lastpass_f.lpsubmitorig2)=="undefined"){ lastpass_f.lpsubmitorig2 = lastpass_f.submit; lastpass_f.submit = function(){ var form=this; var customEvent = document.createEvent("Event"); customEvent.initEvent("lpCustomEvent", true, true); var d = document.getElementById("hiddenlpsubmitdiv"); if (d) {for(var i = 0; i < document.forms.length; i++){ if(document.forms[i]==form){ if (typeof(d.innerText) != 'undefined') { d.innerText=i; } else { d.textContent=i; } } } d.dispatchEvent(customEvent); }form.lpsubmitorig2(); } } }}catch(e){}</script><script defer="" src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015" integrity="sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ==" data-cf-beacon="{&quot;version&quot;:&quot;2024.11.0&quot;,&quot;token&quot;:&quot;9944526787264704a9171de8acf2ba91&quot;,&quot;r&quot;:1,&quot;server_timing&quot;:{&quot;name&quot;:{&quot;cfCacheStatus&quot;:true,&quot;cfEdge&quot;:true,&quot;cfExtPri&quot;:true,&quot;cfL4&quot;:true,&quot;cfOrigin&quot;:true,&quot;cfSpeedBrain&quot;:true},&quot;location_startswith&quot;:null}}" crossorigin="anonymous"></script>
+</body></html></div>
+    <script src="/script.js"></script>
+    <script id="zappy-mobile-submenu-script">
+    (function() {
+      function initMobileSubmenuToggles() {
+        if (window.innerWidth > 768) { document.querySelectorAll('.mobile-submenu-toggle').forEach(function(b){b.remove();}); document.querySelectorAll('.sub-menu.mobile-expanded').forEach(function(m){m.classList.remove('mobile-expanded');}); return; }
+        document.querySelectorAll('.nav-menu li:has(.sub-menu), nav li:has(.sub-menu), .navbar li:has(.sub-menu), #navMenu li:has(.sub-menu)').forEach(function(li) {
+          if (li.querySelector('.mobile-submenu-toggle')) return;
+          var sm = li.querySelector('.sub-menu'), pl = li.querySelector(':scope > a');
+          if (!sm || !pl) return;
+          var tb = document.createElement('button'); tb.className = 'mobile-submenu-toggle'; tb.setAttribute('aria-label', 'Toggle submenu'); tb.setAttribute('type', 'button');
+          pl.insertAdjacentElement('afterend', tb);
+          tb.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation();
+            document.querySelectorAll('.sub-menu.mobile-expanded').forEach(function(m) { if (m !== sm) { m.classList.remove('mobile-expanded'); var t = m.parentElement.querySelector('.mobile-submenu-toggle'); if(t) t.classList.remove('expanded'); }});
+            sm.classList.toggle('mobile-expanded'); tb.classList.toggle('expanded');
+          });
+        });
+      }
+      if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', initMobileSubmenuToggles); } else { initMobileSubmenuToggles(); }
+      window.addEventListener('resize', function() { clearTimeout(window._mrt); window._mrt = setTimeout(initMobileSubmenuToggles, 250); });
+    })();
+    </script>
+</body>
+</html>
